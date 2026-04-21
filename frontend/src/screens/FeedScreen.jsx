@@ -41,13 +41,14 @@ export default function FeedScreen({ user, trip }) {
 
   // Real-time socket events
   useSocket(trip.id, {
-    'new-entry': ({ entry }) => {
-      // Prepend new entry (skip if already in list — could be our own optimistic)
-      setEntries(prev => {
-        if (prev.some(e => e.id === entry.id)) return prev;
-        return [entry, ...prev];
-      });
-    },
+     'new-entry': ({ entry }) => {
+       // Prepend new entry (skip if already in list — could be our own optimistic)
+       if (!entry) return;
+       setEntries(prev => {
+         if (prev.some(e => e?.id === entry?.id)) return prev;
+         return [entry, ...prev];
+       });
+     },
     'entry-deleted': ({ entryId }) => {
       setEntries(prev => prev.filter(e => e.id !== entryId));
     },
@@ -63,23 +64,25 @@ export default function FeedScreen({ user, trip }) {
         return { ...e, comments, _count: { ...e._count, comments: (e._count?.comments || 0) + 1 } };
       }));
     },
-    'member-joined': ({ user: newUser }) => {
-      setMembers(prev => {
-        if (prev.some(m => m.user?.id === newUser.id)) return prev;
-        return [...prev, { user: newUser, role: 'MEMBER', joinedAt: new Date().toISOString() }];
-      });
-    },
+     'member-joined': ({ user: newUser }) => {
+       if (!newUser) return;
+       setMembers(prev => {
+         if (prev.some(m => m?.user?.id === newUser?.id)) return prev;
+         return [...prev, { user: newUser, role: 'MEMBER', joinedAt: new Date().toISOString() }];
+       });
+     },
   });
 
-  // Optimistic entry add (from CaptureBar)
-  const handleEntryCreated = useCallback((entry) => {
-    setEntries(prev => {
-      if (prev.some(e => e.id === entry.id)) return prev;
-      return [entry, ...prev];
-    });
-    // Scroll to top
-    feedRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
-  }, []);
+   // Optimistic entry add (from CaptureBar)
+   const handleEntryCreated = useCallback((entry) => {
+     if (!entry) return;
+     setEntries(prev => {
+       if (prev.some(e => e?.id === entry?.id)) return prev;
+       return [entry, ...prev];
+     });
+     // Scroll to top
+     feedRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+   }, []);
 
   // Reaction toggle
   const handleReaction = useCallback(async (entryId, emoji) => {
@@ -192,8 +195,8 @@ export default function FeedScreen({ user, trip }) {
         )}
       </div>
 
-      {/* Capture bar */}
-      <CaptureBar user={user} trip={trip} onEntryCreated={handleEntryCreated} />
+       {/* Capture bar */}
+       <CaptureBar tripId={trip.id} onEntryCreated={handleEntryCreated} />
 
       {/* Invite modal */}
       {showInvite && (
