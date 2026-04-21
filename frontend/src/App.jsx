@@ -3,7 +3,7 @@ import { api } from './lib/api.js';
 import OnboardScreen from './screens/OnboardScreen.jsx';
 import FeedScreen from './screens/FeedScreen.jsx';
 import MapScreen from './screens/MapScreen.jsx';
-import ExportModal from '../components/ExportModal';
+import ExportModal from './components/ExportModal';
 
 export default function App() {
   const [user, setUser] = useState(null);

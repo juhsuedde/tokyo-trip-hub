@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import FeedScreen from './FeedScreen';
 import MapScreen from './MapScreen';
-import ExportModal from '../components/ExportModal';
+import ExportModal from './components/ExportModal';
 
 export default function TripScreen({ trip, socket, user }) {
   const [activeTab, setActiveTab] = useState('feed'); // 'feed' | 'map'
