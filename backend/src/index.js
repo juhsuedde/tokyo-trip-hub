@@ -1,11 +1,6 @@
 /**
- * backend/src/index.js  (Phase 2 replacement)
- *
- * Changes from Phase 1:
- *  - Expose `io` on `global.__io` so aiQueue.js can emit events
- *  - Import aiQueue to ensure workers are registered at startup
+ * backend/src/index.js  (Phase 3 — adds export routes + queue)
  */
-
 require('dotenv').config();
 const express = require('express');
 const http = require('http');
@@ -24,17 +19,17 @@ const ALLOWED_ORIGINS = [
 const { prisma } = require('./lib/prisma');
 const { redisClient } = require('./lib/redis');
 const { sessionMiddleware } = require('./middleware/session');
-
 const tripsRouter = require('./routes/trips');
 const entriesRouter = require('./routes/entries');
 const usersRouter = require('./routes/users');
+const exportRouter = require('./routes/export');
 
 // Register Bull queue workers
 require('./queues/aiQueue');
+require('./queues/exportQueue');
 
 const app = express();
 const server = http.createServer(app);
-
 const io = new Server(server, {
   cors: {
     origin: (origin, callback) => {
@@ -49,7 +44,6 @@ const io = new Server(server, {
 
 // Make io available to Bull queue workers
 global.__io = io;
-
 app.set('io', io);
 
 io.on('connection', (socket) => {
@@ -72,6 +66,9 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 const uploadDir = process.env.UPLOAD_DIR || path.join(__dirname, '..', 'uploads');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
+const exportsDir = process.env.EXPORTS_DIR || path.join(__dirname, '..', 'exports');
+if (!fs.existsSync(exportsDir)) fs.mkdirSync(exportsDir, { recursive: true });
+
 app.use(fileUpload({
   limits: { fileSize: 50 * 1024 * 1024 },
   useTempFiles: true,
@@ -79,11 +76,14 @@ app.use(fileUpload({
 }));
 
 app.use('/uploads', express.static(uploadDir));
-app.use(sessionMiddleware);
 
+app.use(sessionMiddleware);
 app.use('/api/trips', tripsRouter);
 app.use('/api/entries', entriesRouter);
 app.use('/api/users', usersRouter);
+app.use('/api/export', exportRouter);
+// Export trigger also lives under trips namespace
+app.use('/api', exportRouter);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

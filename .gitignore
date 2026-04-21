@@ -13,7 +13,7 @@ uploads/
 */uploads/*
 !*/uploads/.gitkeep
 
-# Build
+# Build / Dist
 dist/
 build/
 *.tsbuildinfo
@@ -40,3 +40,17 @@ yarn-error.log*
 
 # Prisma
 prisma/migrations/*/migration_lock.toml
+
+# Bull queue
+dump.rdb
+
+# Coverage / Test
+.coverage/
+coverage/
+*.lcov
+
+# Temporary files
+.tmp/
+tmp/
+*.tmp
+EOF

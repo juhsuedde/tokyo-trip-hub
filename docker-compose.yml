@@ -39,6 +39,9 @@ services:
       NODE_ENV: development
       UPLOAD_DIR: /app/uploads
       FRONTEND_URL: http://192.168.0.245:5173
+      EXPORTS_DIR: /app/exports
+      SERVER_URL: http://localhost:3001
+      CHROME_PATH: /usr/bin/chromium
     volumes:
       - ./backend:/app
       - /app/node_modules

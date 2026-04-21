@@ -1,6 +1,8 @@
+/**
+ * frontend/src/lib/api.js  (Phase 3 — adds export endpoints)
+ */
 import { saveOfflineEntry, syncOfflineEntries } from './offlineQueue';
 
-// Keep BASE empty to use relative URLs that go through Vite proxy
 const BASE = '';
 
 function getSession() {
@@ -25,23 +27,17 @@ async function request(method, path, body, isFormData = false) {
     headers,
     body: isFormData ? body : body ? JSON.stringify(body) : undefined,
   });
-
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
   return data;
 }
 
-/**
- * Like request(), but falls back to IndexedDB on network failure.
- * Only used for entry creation (POST).
- */
 async function requestWithOfflineFallback(tripId, formDataOrBody, isFormData) {
   try {
     return await request('POST', `/entries/trips/${tripId}/entries`, formDataOrBody, isFormData);
   } catch (err) {
     if (isNetworkError(err)) {
       if (isFormData) {
-        // Extract file blob for later re-upload
         const file = formDataOrBody.get('file');
         const data = {};
         for (const [k, v] of formDataOrBody.entries()) {
@@ -63,35 +59,33 @@ async function requestWithOfflineFallback(tripId, formDataOrBody, isFormData) {
   }
 }
 
-// Auto-sync when the browser comes back online
 if (typeof window !== 'undefined') {
-  window.addEventListener('online', () => {
-    syncOfflineEntries();
-  });
+  window.addEventListener('online', () => syncOfflineEntries());
 }
 
 export { syncOfflineEntries };
 
 export const api = {
-  register: (name) => request('POST', '/users/register', { name }),
-  me: () => request('GET', '/users/me'),
-  createTrip: (data) => request('POST', '/trips', data),
-  joinTrip: (code) => request('POST', `/trips/${code}/join`),
-  getTrip: (id) => request('GET', `/trips/${id}`),
-  getFeed: (tripId, cursor) =>
+  register:        (name) => request('POST', '/users/register', { name }),
+  me:              () => request('GET', '/users/me'),
+  createTrip:      (data) => request('POST', '/trips', data),
+  joinTrip:        (code) => request('POST', `/trips/${code}/join`),
+  getTrip:         (id) => request('GET', `/trips/${id}`),
+  getFeed:         (tripId, cursor) =>
     request('GET', `/trips/${tripId}/feed${cursor ? `?cursor=${cursor}` : ''}`),
-  getMembers: (tripId) => request('GET', `/trips/${tripId}/members`),
+  getMembers:      (tripId) => request('GET', `/trips/${tripId}/members`),
+  createEntry:     (tripId, formData) => requestWithOfflineFallback(tripId, formData, true),
+  createTextEntry: (tripId, data) => requestWithOfflineFallback(tripId, data, false),
+  deleteEntry:     (id) => request('DELETE', `/entries/${id}`),
+  toggleReaction:  (entryId, emoji) => request('POST', `/entries/${entryId}/reactions`, { emoji }),
+  addComment:      (entryId, text) => request('POST', `/entries/${entryId}/comments`, { text }),
+  getEntryStatus:  (id) => request('GET', `/entries/${id}/status`),
 
-  // Updated: offline-aware entry creation
-  createEntry: (tripId, formData) =>
-    requestWithOfflineFallback(tripId, formData, true),
-  createTextEntry: (tripId, data) =>
-    requestWithOfflineFallback(tripId, data, false),
-
-  deleteEntry: (id) => request('DELETE', `/entries/${id}`),
-  toggleReaction: (entryId, emoji) =>
-    request('POST', `/entries/${entryId}/reactions`, { emoji }),
-  addComment: (entryId, text) =>
-    request('POST', `/entries/${entryId}/comments`, { text }),
-  getEntryStatus: (id) => request('GET', `/entries/${id}/status`),
+  // ── Export ──────────────────────────────────────────────────────────────────
+  startExport: (tripId, { format, template, entryIds }) =>
+    request('POST', `/trips/${tripId}/export`, { format, template, entryIds }),
+  getExportStatus: (jobId) =>
+    request('GET', `/export/${jobId}/status`),
+  // Download URL is a direct link: /api/export/:jobId/download
+  getExportDownloadUrl: (jobId) => `/api/export/${jobId}/download`,
 };

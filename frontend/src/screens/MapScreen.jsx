@@ -1,163 +1,337 @@
-import { useState, useEffect } from 'react';
-import { api } from '../lib/api.js';
+/**
+ * frontend/src/screens/MapScreen.jsx
+ * Interactive Leaflet map showing all geolocated trip entries
+ */
+import { useEffect, useState, useRef } from 'react';
+import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet';
+import MarkerClusterGroup from 'react-leaflet-markercluster';
+import 'leaflet/dist/leaflet.css';
+import { api } from '../lib/api';
 
-export default function MapScreen({ user, trip }) {
+const CATEGORY_CONFIG = {
+  FOOD_DRINK:      { color: '#f97316', emoji: '🍜', label: 'Food & Drink' },
+  SIGHTSEEING:     { color: '#3b82f6', emoji: '🗼', label: 'Sightseeing' },
+  ACCOMMODATION:   { color: '#a855f7', emoji: '🏨', label: 'Accommodation' },
+  TRANSPORTATION:  { color: '#22c55e', emoji: '🚄', label: 'Transportation' },
+  SHOPPING:        { color: '#eab308', emoji: '🛍️', label: 'Shopping' },
+  TIP_WARNING:     { color: '#ef4444', emoji: '⚠️', label: 'Tips & Warnings' },
+  MISC:            { color: '#94a3b8', emoji: '📝', label: 'Misc' },
+  null:            { color: '#94a3b8', emoji: '📍', label: 'Entry' },
+};
+
+function getCatConfig(cat) {
+  return CATEGORY_CONFIG[cat] || CATEGORY_CONFIG['null'];
+}
+
+// Fit map to bounds of all markers
+function FitBounds({ entries }) {
+  const map = useMap();
+  useEffect(() => {
+    const pts = entries.filter(e => e.latitude && e.longitude);
+    if (pts.length === 0) return;
+    if (pts.length === 1) {
+      map.setView([pts[0].latitude, pts[0].longitude], 14);
+      return;
+    }
+    const lats = pts.map(e => e.latitude);
+    const lngs = pts.map(e => e.longitude);
+    map.fitBounds([
+      [Math.min(...lats) - 0.005, Math.min(...lngs) - 0.005],
+      [Math.max(...lats) + 0.005, Math.max(...lngs) + 0.005],
+    ], { padding: [32, 32] });
+  }, [entries]);
+  return null;
+}
+
+export default function MapScreen({ tripId }) {
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selected, setSelected] = useState(null);
+  const [activeFilter, setActiveFilter] = useState(null);
+  const [selectedEntry, setSelectedEntry] = useState(null);
 
   useEffect(() => {
-    async function loadAll() {
+    async function load() {
       try {
-        // Load all entries (no cursor — we want everything for the map)
+        // Load all feed pages
         let all = [];
         let cursor = null;
-        let hasMore = true;
-        while (hasMore) {
-          const { entries: items, pagination } = await api.getFeed(trip.id, cursor);
-          all = [...all, ...items];
-          hasMore = pagination.hasMore;
-          cursor = pagination.nextCursor;
-        }
+        do {
+          const res = await api.getFeed(tripId, cursor);
+          all = all.concat(res.entries || []);
+          cursor = res.nextCursor || null;
+        } while (cursor);
         setEntries(all.filter(e => e.latitude && e.longitude));
       } catch (err) {
-        console.error('[map] load error:', err);
+        console.error('MapScreen load error:', err);
       } finally {
         setLoading(false);
       }
     }
-    loadAll();
-  }, [trip.id]);
+    load();
+  }, [tripId]);
 
-  const geoEntries = entries.filter(e => e.latitude && e.longitude);
-  const catColors = {
-    FOOD_DRINK: '#ff4d6d',
-    SIGHTSEEING: '#ffd166',
-    SHOPPING: '#06d6a0',
-    TIP_WARNING: '#a78bfa',
-    default: '#9998b8',
-  };
+  const geoEntries = activeFilter
+    ? entries.filter(e => e.category === activeFilter)
+    : entries;
+
+  // Count by category for legend
+  const catCounts = {};
+  for (const e of entries) {
+    const k = e.category || 'MISC';
+    catCounts[k] = (catCounts[k] || 0) + 1;
+  }
+
+  const defaultCenter = geoEntries.length > 0
+    ? [geoEntries[0].latitude, geoEntries[0].longitude]
+    : [35.6762, 139.6503]; // Tokyo default
+
+  if (loading) {
+    return (
+      <div style={styles.loadingWrap}>
+        <div style={styles.spinner} />
+        <p style={styles.loadingText}>Loading map…</p>
+      </div>
+    );
+  }
+
+  if (entries.length === 0) {
+    return (
+      <div style={styles.emptyWrap}>
+        <div style={styles.emptyIcon}>🗺️</div>
+        <h3 style={styles.emptyTitle}>No locations yet</h3>
+        <p style={styles.emptyText}>Entries with GPS data will appear here.</p>
+      </div>
+    );
+  }
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      {/* Header */}
-      <div style={{ padding: '52px 20px 12px', flexShrink: 0 }}>
-        <h1 className="syne" style={{ fontSize: 22, fontWeight: 800 }}>Trip Map</h1>
-        <p style={{ fontSize: 12, color: 'var(--text3)', marginTop: 2 }}>
-          {geoEntries.length} pinned location{geoEntries.length !== 1 ? 's' : ''} · {trip.destination}
-        </p>
+    <div style={styles.wrapper}>
+      {/* Legend / Filter bar */}
+      <div style={styles.legend}>
+        <button
+          style={{ ...styles.filterBtn, ...(activeFilter === null ? styles.filterBtnActive : {}) }}
+          onClick={() => setActiveFilter(null)}
+        >
+          All ({entries.length})
+        </button>
+        {Object.entries(catCounts).map(([cat, count]) => {
+          const cfg = getCatConfig(cat);
+          return (
+            <button
+              key={cat}
+              style={{
+                ...styles.filterBtn,
+                ...(activeFilter === cat ? styles.filterBtnActive : {}),
+                borderColor: cfg.color,
+              }}
+              onClick={() => setActiveFilter(activeFilter === cat ? null : cat)}
+            >
+              <span style={{ color: cfg.color }}>{cfg.emoji}</span>
+              {' '}{cfg.label} ({count})
+            </button>
+          );
+        })}
       </div>
 
-      {/* Map placeholder — replace with Leaflet/Mapbox in Phase 2 */}
-      <div style={{
-        flex: 1, background: '#101018', position: 'relative', overflow: 'hidden',
-        borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)',
-      }}>
-        {/* Grid lines */}
-        <div style={{
-          position: 'absolute', inset: 0,
-          backgroundImage: 'linear-gradient(var(--bg3) 1px, transparent 1px), linear-gradient(90deg, var(--bg3) 1px, transparent 1px)',
-          backgroundSize: '40px 40px', opacity: 0.4,
-        }} />
-
-        {loading ? (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
-            <div className="spinner" />
-          </div>
-        ) : geoEntries.length === 0 ? (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text3)' }}>
-            <div style={{ fontSize: 40, marginBottom: 12 }}>📍</div>
-            <p style={{ fontSize: 13 }}>No geotagged entries yet</p>
-            <p style={{ fontSize: 12, marginTop: 4 }}>Enable location when capturing entries</p>
-          </div>
-        ) : (
-          <>
-            {/* Render pins at pseudo-positions (real map in Phase 2) */}
-            {geoEntries.map((entry, i) => {
-              const color = catColors[entry.category] || catColors.default;
-              // Distribute pins visually until real map is integrated
-              const x = 15 + ((i * 67) % 70);
-              const y = 10 + ((i * 43) % 70);
-              return (
-                <div
-                  key={entry.id}
-                  onClick={() => setSelected(entry.id === selected?.id ? null : entry)}
-                  style={{
-                    position: 'absolute',
-                    left: `${x}%`, top: `${y}%`,
-                    transform: 'translate(-50%, -100%)',
-                    cursor: 'pointer',
-                    display: 'flex', flexDirection: 'column', alignItems: 'center',
-                    zIndex: selected?.id === entry.id ? 10 : 1,
-                  }}
-                >
-                  <div style={{
-                    background: color, color: '#fff',
-                    borderRadius: 100, padding: '4px 10px',
-                    fontSize: 11, fontWeight: 500, whiteSpace: 'nowrap',
-                    maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis',
-                    boxShadow: `0 4px 12px ${color}55`,
-                    border: selected?.id === entry.id ? '2px solid #fff' : 'none',
-                  }}>
-                    {entry.address?.split(',')[0] || entry.type}
+      {/* Map */}
+      <MapContainer
+        center={defaultCenter}
+        zoom={13}
+        style={styles.map}
+        zoomControl={true}
+      >
+        <TileLayer
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+        />
+        <FitBounds entries={geoEntries} />
+        {geoEntries.map(entry => {
+          const cfg = getCatConfig(entry.category);
+          const isSelected = selectedEntry?.id === entry.id;
+          return (
+            <CircleMarker
+              key={entry.id}
+              center={[entry.latitude, entry.longitude]}
+              radius={isSelected ? 14 : 10}
+              pathOptions={{
+                color: '#fff',
+                weight: 2,
+                fillColor: cfg.color,
+                fillOpacity: 0.9,
+              }}
+              eventHandlers={{
+                click: () => setSelectedEntry(entry),
+              }}
+            >
+              <Popup maxWidth={240}>
+                <div style={styles.popup}>
+                  {entry.contentUrl && (
+                    <img
+                      src={entry.contentUrl}
+                      alt="entry"
+                      style={styles.popupImg}
+                      onError={e => e.target.style.display = 'none'}
+                    />
+                  )}
+                  <div style={styles.popupBody}>
+                    <div style={styles.popupMeta}>
+                      <span style={{ ...styles.popupCat, background: cfg.color }}>
+                        {cfg.emoji} {cfg.label}
+                      </span>
+                      {entry.sentiment && (
+                        <span style={styles.popupSentiment}>
+                          {entry.sentiment === 'POSITIVE' ? '😊' : entry.sentiment === 'NEGATIVE' ? '😟' : '😐'}
+                        </span>
+                      )}
+                    </div>
+                    {entry.rawText && (
+                      <p style={styles.popupText}>{entry.rawText.slice(0, 120)}{entry.rawText.length > 120 ? '…' : ''}</p>
+                    )}
+                    {entry.transcription && !entry.rawText && (
+                      <p style={styles.popupText}>{entry.transcription.slice(0, 120)}…</p>
+                    )}
+                    <p style={styles.popupAuthor}>
+                      {entry.user?.name} · {new Date(entry.capturedAt).toLocaleDateString()}
+                    </p>
+                    {entry.address && (
+                      <p style={styles.popupAddr}>📍 {entry.address}</p>
+                    )}
+                    {entry.tags?.length > 0 && (
+                      <div style={styles.popupTags}>
+                        {entry.tags.slice(0, 4).map(t => (
+                          <span key={t} style={styles.popupTag}>{t}</span>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                  <div style={{ width: 2, height: 8, background: color }} />
-                  <div style={{ width: 6, height: 6, borderRadius: '50%', background: color }} />
                 </div>
-              );
-            })}
+              </Popup>
+            </CircleMarker>
+          );
+        })}
+      </MapContainer>
 
-            {/* Selected entry card */}
-            {selected && (
-              <div style={{
-                position: 'absolute', bottom: 16, left: 16, right: 16,
-                background: 'var(--bg2)', border: '1px solid var(--border)',
-                borderRadius: 16, padding: '14px 16px',
-                animation: 'fadeSlideUp 0.2s ease',
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                  <span style={{ fontSize: 11, color: catColors[selected.category] || 'var(--text3)', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                    {selected.category?.replace('_', ' ') || selected.type}
-                  </span>
-                  <button onClick={() => setSelected(null)} style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 16 }}>✕</button>
-                </div>
-                <p style={{ fontSize: 14, color: 'var(--text)', lineHeight: 1.5, marginBottom: 6 }}>
-                  {selected.rawText}
-                </p>
-                <p style={{ fontSize: 12, color: 'var(--text3)' }}>
-                  📍 {selected.address} · by {selected.user?.name}
-                </p>
-              </div>
-            )}
-          </>
-        )}
-
-        {/* Legend */}
-        {!loading && geoEntries.length > 0 && !selected && (
-          <div style={{
-            position: 'absolute', bottom: 16, left: 16, right: 16,
-            background: 'rgba(10,10,15,0.9)', border: '1px solid var(--border)',
-            borderRadius: 14, padding: '10px 14px',
-          }}>
-            <p style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 6 }}>Category</p>
-            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-              {Object.entries(catColors).filter(([k]) => k !== 'default').map(([cat, color]) => (
-                <div key={cat} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: color }} />
-                  <span style={{ fontSize: 11, color: 'var(--text2)' }}>{cat.replace('_', ' ')}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Note about real map */}
-      <div style={{ padding: '10px 16px', background: 'var(--bg2)', flexShrink: 0 }}>
-        <p style={{ fontSize: 11, color: 'var(--text3)', textAlign: 'center' }}>
-          Phase 2: Replace with Leaflet + OpenStreetMap tiles for real geolocation pins
-        </p>
+      <div style={styles.countBadge}>
+        {geoEntries.length} location{geoEntries.length !== 1 ? 's' : ''}
+        {activeFilter ? ` · filtered` : ''}
       </div>
     </div>
   );
 }
+
+const styles = {
+  wrapper: {
+    position: 'relative',
+    height: '100%',
+    display: 'flex',
+    flexDirection: 'column',
+    background: '#0f0f0f',
+  },
+  legend: {
+    display: 'flex',
+    gap: 6,
+    padding: '10px 12px',
+    overflowX: 'auto',
+    background: '#111',
+    borderBottom: '1px solid #222',
+    flexShrink: 0,
+    scrollbarWidth: 'none',
+  },
+  filterBtn: {
+    flexShrink: 0,
+    padding: '5px 10px',
+    background: '#1a1a1a',
+    border: '1px solid #333',
+    borderRadius: 20,
+    color: '#ccc',
+    fontSize: 12,
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
+    transition: 'all 0.15s',
+  },
+  filterBtnActive: {
+    background: '#2a2a2a',
+    color: '#fff',
+    borderColor: '#555',
+  },
+  map: {
+    flex: 1,
+    width: '100%',
+    minHeight: 0,
+  },
+  countBadge: {
+    position: 'absolute',
+    bottom: 12,
+    right: 12,
+    background: 'rgba(0,0,0,0.75)',
+    color: '#fff',
+    fontSize: 12,
+    padding: '4px 10px',
+    borderRadius: 12,
+    backdropFilter: 'blur(8px)',
+    zIndex: 1000,
+    pointerEvents: 'none',
+  },
+  loadingWrap: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 16,
+    color: '#888',
+    background: '#0f0f0f',
+  },
+  spinner: {
+    width: 32,
+    height: 32,
+    border: '3px solid #333',
+    borderTop: '3px solid #dc2626',
+    borderRadius: '50%',
+    animation: 'spin 0.8s linear infinite',
+  },
+  loadingText: { color: '#666', fontSize: 14 },
+  emptyWrap: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    background: '#0f0f0f',
+    color: '#888',
+  },
+  emptyIcon: { fontSize: 48 },
+  emptyTitle: { color: '#ccc', fontWeight: 600, fontSize: 18, margin: 0 },
+  emptyText: { color: '#666', fontSize: 14, margin: 0 },
+  popup: { minWidth: 180 },
+  popupImg: {
+    width: '100%',
+    height: 110,
+    objectFit: 'cover',
+    borderRadius: 6,
+    marginBottom: 8,
+    display: 'block',
+  },
+  popupBody: { padding: '0 2px' },
+  popupMeta: { display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 },
+  popupCat: {
+    fontSize: 11,
+    padding: '2px 8px',
+    borderRadius: 10,
+    color: '#fff',
+    fontWeight: 600,
+  },
+  popupSentiment: { fontSize: 14 },
+  popupText: { fontSize: 13, color: '#1c1917', lineHeight: 1.5, margin: '0 0 4px' },
+  popupAuthor: { fontSize: 11, color: '#888', margin: '4px 0 2px' },
+  popupAddr: { fontSize: 11, color: '#888', margin: '2px 0' },
+  popupTags: { display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 },
+  popupTag: {
+    fontSize: 10,
+    padding: '1px 6px',
+    background: '#f3e8d0',
+    borderRadius: 8,
+    color: '#78350f',
+  },
+};

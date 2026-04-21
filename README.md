@@ -1,6 +1,6 @@
 # TokyoTrip Hub 🗼
 
-> Um PWA colaborativo de inteligência de viagem, construído para capturar, organizar e publicar experiências de viagem.
+> Um PWA colaborativo de inteligência de viagem, construído para capturar, organizar e publicar experiências de viagem — começando pela primavera de Tóquio 2026.
 
 [![Docker](https://img.shields.io/badge/Docker-Compose-blue?logo=docker)](https://docker.com)
 [![React](https://img.shields.io/badge/Frontend-React_18-61DAFB?logo=react)](https://react.dev)
@@ -16,10 +16,10 @@
 O TokyoTrip Hub é um **diário de viagem colaborativo sem fricção**, projetado para uso no mundo real durante viagens:
 
 - 📸 **Capture primeiro, organize depois** — tire fotos, grave memos de voz, salve locais, escreva notas rápidas
-- 👥 **Colaboração em tempo real** — Mais de um viajante contribuindo simultaneamente para o mesmo feed de viagem
+- 👥 **Colaboração em tempo real** — 4 viajantes contribuindo simultaneamente para o mesmo feed de viagem
 - 🧠 **Organização automática por IA** — Whisper transcreve áudio, GPT-4V extrai texto de fotos, auto-categoriza e etiqueta tudo
 - 📡 **Offline-first** — funciona nos túneis do metrô de Tóquio; sincroniza quando o WiFi volta
-- 📖 **Exporte para publicar** — gere e-books, guias em PDF ou posts de blog a partir dos dados estruturados da viagem
+- 📖 **Exporte para publicar** — gere e-books, guias em PDF ou posts de blog a partir dos dados estruturados da viagem *(Phase 3)*
 
 Construído como um **projeto de portfólio de nível produção** com potencial claro de monetização como SaaS.
 
@@ -68,7 +68,7 @@ Construído como um **projeto de portfólio de nível produção** com potencial
 
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) (ou Colima)
 - [Node.js 18+](https://nodejs.org/) (para desenvolvimento local fora do Docker)
-- Chave de API da OpenAI (para os recursos de IA da Phase 2)
+- Chave de API da OpenAI (opcional — há modo MOCK para desenvolvimento sem custos)
 
 ### 1. Clone e Execute
 
@@ -90,16 +90,15 @@ docker compose exec backend npm run seed
 
 ### 3. Acesse
 
-| Serviço             | URL                                 |
-| ------------------- | ----------------------------------- |
-| Frontend (PWA)      | http://localhost:5173               |
-| Health da API       | http://localhost:3001/api/health    |
+| Serviço | URL |
+|---------|-----|
+| Frontend (PWA) | http://localhost:5173 |
+| Health da API | http://localhost:3001/api/health |
 | Documentação da API | http://localhost:3001/api (Swagger) |
 
 ### 4. Teste no Celular
 
 Descubra seu IP local:
-
 ```bash
 ipconfig getifaddr en0  # macOS
 # ou
@@ -115,13 +114,11 @@ Acesse no celular: `http://SEU_IP:5173`
 ## 📱 Instalação do PWA
 
 ### iOS (Safari)
-
 1. Abra `http://SEU_IP:5173` no Safari
 2. Toque em Compartilhar → "Adicionar à Tela de Início"
 3. Inicie pela tela inicial (tela cheia, sem barra do navegador)
 
 ### Android (Chrome)
-
 1. Abra a URL no Chrome
 2. Toque no menu → "Adicionar à tela inicial" ou "Instalar aplicativo"
 3. Inicie como app standalone
@@ -154,19 +151,19 @@ npm run dev
 ### Variáveis de Ambiente
 
 Crie `backend/.env`:
-
 ```env
 DATABASE_URL="postgresql://postgres:postgres@localhost:5432/tokyotrip?schema=public"
 REDIS_URL="redis://localhost:6379"
-OPENAI_API_KEY="sk-..."
+OPENAI_API_KEY=sk-...
+MOCK_AI=true  # true = simula IA sem custos; false = usa OpenAI real
+BASE_URL=http://backend:3001
 PORT=3001
 UPLOAD_DIR="./uploads"
 ```
 
 Crie `frontend/.env`:
-
 ```env
-VITE_API_URL="http://localhost:3001"
+VITE_API_URL=http://localhost:3001
 ```
 
 ---
@@ -174,38 +171,34 @@ VITE_API_URL="http://localhost:3001"
 ## 📡 Endpoints da API
 
 ### Autenticação
-
-| Método | Endpoint              | Descrição                             |
-| ------ | --------------------- | ------------------------------------- |
-| POST   | `/api/users/register` | Cria usuário, retorna token de sessão |
-| GET    | `/api/users/me`       | Obtém usuário atual                   |
+| Método | Endpoint | Descrição |
+|--------|----------|-----------|
+| POST | `/api/users/register` | Cria usuário, retorna token de sessão |
+| GET | `/api/users/me` | Obtém usuário atual |
 
 ### Viagens
-
-| Método | Endpoint                 | Descrição                               |
-| ------ | ------------------------ | --------------------------------------- |
-| POST   | `/api/trips`             | Cria viagem (retorna código de convite) |
-| POST   | `/api/trips/:code/join`  | Entra na viagem pelo código             |
-| GET    | `/api/trips/:id`         | Detalhes da viagem                      |
-| GET    | `/api/trips/:id/feed`    | Feed paginado de entradas               |
-| GET    | `/api/trips/:id/members` | Lista membros da viagem                 |
+| Método | Endpoint | Descrição |
+|--------|----------|-----------|
+| POST | `/api/trips` | Cria viagem (retorna código de convite) |
+| POST | `/api/trips/:code/join` | Entra na viagem pelo código |
+| GET | `/api/trips/:id` | Detalhes da viagem |
+| GET | `/api/trips/:id/feed` | Feed paginado de entradas |
+| GET | `/api/trips/:id/members` | Lista membros da viagem |
 
 ### Entradas
-
-| Método | Endpoint                         | Descrição                           |
-| ------ | -------------------------------- | ----------------------------------- |
-| POST   | `/api/entries/trips/:id/entries` | Cria entrada (multipart para mídia) |
-| DELETE | `/api/entries/:id`               | Deleta entrada                      |
-| POST   | `/api/entries/:id/reactions`     | Alterna reação de emoji             |
-| POST   | `/api/entries/:id/comments`      | Adiciona comentário                 |
-| GET    | `/api/entries/:id/status`        | Status de processamento da IA       |
+| Método | Endpoint | Descrição |
+|--------|----------|-----------|
+| POST | `/api/entries/trips/:id/entries` | Cria entrada (multipart para mídia) |
+| DELETE | `/api/entries/:id` | Deleta entrada |
+| POST | `/api/entries/:id/reactions` | Alterna reação de emoji |
+| POST | `/api/entries/:id/comments` | Adiciona comentário |
+| GET | `/api/entries/:id/status` | Status de processamento da IA |
 
 ---
 
 ## 🗺️ Roadmap
 
 ### Phase 1 ✅ — Fundação
-
 - [x] Stack Docker Compose (PostgreSQL, Redis, Node, React)
 - [x] Schema Prisma com todas as tabelas + hooks da Phase 2
 - [x] API REST com Express
@@ -215,23 +208,21 @@ VITE_API_URL="http://localhost:3001"
 - [x] Reações e comentários
 - [x] Códigos de convite e entrada em viagens
 
-### Phase 2 🔄 — Inteligência
+### Phase 2 ✅ — Inteligência
+- [x] Fila offline com IndexedDB e sync em background
+- [x] Transcrição de áudio com OpenAI Whisper
+- [x] OCR + auto-categorização com GPT-4 Vision
+- [x] Captura de memos de voz (MediaRecorder)
+- [x] Endpoint de status de processamento da IA
+- [x] Modo MOCK_AI para desenvolvimento sem custos
 
-- [ ] Fila offline com IndexedDB e sync em background
-- [ ] Transcrição de áudio com OpenAI Whisper
-- [ ] OCR + auto-categorização com GPT-4 Vision
-- [ ] Captura de memos de voz (MediaRecorder)
-- [ ] Endpoint de status de processamento da IA
-
-### Phase 3 📖 — Publicação
-
+### Phase 3 🔄 — Publicação
 - [ ] Motor de exportação (Puppeteer → PDF/EPUB)
 - [ ] Templates de e-book
 - [ ] Visualização de mapa com todas as entradas
 - [ ] Extração de custos de recibos
 
 ### Phase 4 🚀 — SaaS
-
 - [ ] Contas de usuário (substituir sessões temporárias)
 - [ ] Múltiplas viagens por usuário
 - [ ] Tiers de assinatura (Freemium)
@@ -243,31 +234,41 @@ VITE_API_URL="http://localhost:3001"
 ## 🧠 Recursos de IA
 
 ### Processamento de Áudio (Whisper)
-
 - Grava memos de voz durante a viagem
-- Transcreve automaticamente para texto pesquisável
+- Auto-transcreve para texto pesquisável
 - Armazena áudio + transcrição
 
 ### Inteligência de Imagem (GPT-4V)
-
 - **OCR**: Extrai texto de cardápios, placas, recibos
 - **Categorização**: Auto-classifica em Comida, Passeios, Transporte, etc.
 - **Etiquetagem**: Gera tags relevantes ("ramen", "shibuya", "barato")
 - **Sentimento**: Detecta experiências positivas/neutras/negativas
 
+> **Nota para desenvolvimento:** Ative `MOCK_AI=true` no `.env` para testar todo o fluxo de UI sem consumir créditos da OpenAI.
+
 ---
 
 ## 🛠️ Stack Tecnológico
 
-| Camada             | Tecnologia                                          |
-| ------------------ | --------------------------------------------------- |
-| **Frontend**       | React 18, Vite, Workbox (PWA)                       |
-| **Backend**        | Node.js 18, Express, Socket.io                      |
-| **Banco de Dados** | PostgreSQL 16, Prisma ORM                           |
-| **Cache/Fila**     | Redis 7, Bull                                       |
-| **IA**             | OpenAI Whisper + GPT-4 Vision                       |
-| **Mídia**          | Compressão no cliente, disco local (pronto para S3) |
-| **Exportação**     | Puppeteer (Phase 3)                                 |
+| Camada | Tecnologia |
+|--------|-----------|
+| **Frontend** | React 18, Vite, Workbox (PWA) |
+| **Backend** | Node.js 18, Express, Socket.io |
+| **Banco de Dados** | PostgreSQL 16, Prisma ORM |
+| **Cache/Fila** | Redis 7, Bull |
+| **IA** | OpenAI Whisper + GPT-4 Vision (com modo MOCK) |
+| **Mídia** | Compressão no cliente, disco local (pronto para S3) |
+| **Exportação** | Puppeteer (Phase 3) |
+
+---
+
+## 📸 Screenshots
+
+| Feed | Captura | Mapa | Exportação |
+|------|---------|------|------------|
+| ![Feed](docs/screenshots/feed.png) | ![Captura](docs/screenshots/capture.png) | ![Mapa](docs/screenshots/map.png) | ![Exportação](docs/screenshots/export.png) |
+
+> *Screenshots da viagem Primavera de Tóquio 2026*
 
 ---
 
@@ -291,12 +292,12 @@ MIT License — veja [LICENSE](LICENSE) para detalhes.
 
 ## 🙋 Sobre a Autora
 
-Construído por [Juliana Suedde](https://github.com/juhsuedde/) para uma viagem real a Tóquio com 3 amigos. O objetivo: capturar tudo sem esforço durante a viagem, depois publicar as melhores descobertas como um e-book para outros viajantes.
+Construído por [Seu Nome](https://github.com/SEU_USUARIO) para uma viagem real a Tóquio com 3 amigos. O objetivo: capturar tudo sem esforço durante a viagem, depois publicar as melhores descobertas como um e-book para outros viajantes.
 
-**Dúvidas?** Abra uma issue ou entre em contato no [Twitter/X](https://twitter.com/juhsuedde).
+**Dúvidas?** Abra uma issue ou entre em contato no [Twitter/X](https://twitter.com/SEU_HANDLE).
 
 ---
 
 <p align="center">
-  <sub>Construído com ❤️, ☕ e muita expectativa por Tóquio.</sub>
+  <sub>Construído com ❤️, ☕, e muita expectativa por Tóquio.</sub>
 </p>
