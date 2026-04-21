@@ -1,0 +1,152 @@
+/**
+ * Seed script: creates a demo Tokyo trip with 4 users and sample entries.
+ * Run with: npm run seed
+ */
+require('dotenv').config();
+const { prisma } = require('./prisma');
+
+const USERS = [
+  { name: 'Alex', tempSession: 'demo-session-alex' },
+  { name: 'Yuki', tempSession: 'demo-session-yuki' },
+  { name: 'Kai', tempSession: 'demo-session-kai' },
+  { name: 'Sara', tempSession: 'demo-session-sara' },
+];
+
+const ENTRIES = [
+  {
+    authorIndex: 1, // Yuki
+    type: 'TEXT',
+    rawText: 'Tsuta ramen — Michelin star shoyu broth. Queue was 45 mins but absolutely worth it 🤌',
+    address: 'Tsuta Ramen, Sugamo, Tokyo',
+    latitude: 35.7324,
+    longitude: 139.7394,
+    category: 'FOOD_DRINK',
+    sentiment: 'POSITIVE',
+    tags: ['ramen', 'michelin', 'sugamo', 'must-try'],
+  },
+  {
+    authorIndex: 0, // Alex
+    type: 'TEXT',
+    rawText: 'IC Card works everywhere — get one at Narita. Avoid buying single tickets, it\'s a nightmare at rush hour.',
+    address: 'Narita Airport, Terminal 2',
+    category: 'TIP_WARNING',
+    sentiment: 'POSITIVE',
+    tags: ['ic-card', 'suica', 'transport', 'tip'],
+  },
+  {
+    authorIndex: 3, // Sara
+    type: 'TEXT',
+    rawText: 'Meiji Jingu at sunrise. Completely empty. The gravel path through the cedar forest is magical.',
+    address: 'Meiji Jingu, Harajuku, Tokyo',
+    latitude: 35.6763,
+    longitude: 139.6993,
+    category: 'SIGHTSEEING',
+    sentiment: 'POSITIVE',
+    tags: ['meiji', 'shrine', 'harajuku', 'early-morning'],
+  },
+  {
+    authorIndex: 2, // Kai
+    type: 'TEXT',
+    rawText: 'Don Quijote Shibuya has 5 floors of everything. Tax-free for passport holders. Got matcha kit-kats!',
+    address: 'Don Quijote, Shibuya, Tokyo',
+    latitude: 35.6598,
+    longitude: 139.7004,
+    category: 'SHOPPING',
+    sentiment: 'POSITIVE',
+    tags: ['donki', 'tax-free', 'matcha', 'shibuya'],
+  },
+  {
+    authorIndex: 0, // Alex
+    type: 'TEXT',
+    rawText: 'Avoid Shibuya crossing on weekends after 8pm — absolute sardine tin. Go early morning for the iconic empty shot.',
+    address: 'Shibuya Crossing, Tokyo',
+    latitude: 35.6595,
+    longitude: 139.7004,
+    category: 'TIP_WARNING',
+    sentiment: 'NEUTRAL',
+    tags: ['shibuya', 'crowds', 'photography', 'warning'],
+  },
+];
+
+async function seed() {
+  console.log('🌱 Seeding database...');
+
+  // Upsert users
+  const users = [];
+  for (const u of USERS) {
+    const user = await prisma.user.upsert({
+      where: { tempSession: u.tempSession },
+      update: { name: u.name },
+      create: u,
+    });
+    users.push(user);
+    console.log(`  ✓ User: ${user.name} (session: ${user.tempSession})`);
+  }
+
+  // Create trip
+  let trip = await prisma.trip.findFirst({
+    where: { inviteCode: 'TOKYO1' },
+  });
+
+  if (!trip) {
+    trip = await prisma.trip.create({
+      data: {
+        title: 'Tokyo Spring 2026',
+        destination: 'Tokyo, Japan',
+        startDate: new Date('2026-04-20'),
+        endDate: new Date('2026-04-28'),
+        inviteCode: 'TOKYO1',
+      },
+    });
+    console.log(`  ✓ Trip created: ${trip.title} (code: ${trip.inviteCode})`);
+  } else {
+    console.log(`  ↩ Trip already exists: ${trip.title}`);
+  }
+
+  // Add all users as members
+  for (let i = 0; i < users.length; i++) {
+    await prisma.tripMembership.upsert({
+      where: { userId_tripId: { userId: users[i].id, tripId: trip.id } },
+      update: {},
+      create: {
+        userId: users[i].id,
+        tripId: trip.id,
+        role: i === 0 ? 'OWNER' : 'MEMBER',
+      },
+    });
+  }
+  console.log(`  ✓ Added ${users.length} members to trip`);
+
+  // Create entries
+  let entryCount = 0;
+  for (const e of ENTRIES) {
+    const existing = await prisma.entry.findFirst({
+      where: { tripId: trip.id, rawText: e.rawText },
+    });
+    if (existing) continue;
+
+    const { authorIndex, ...entryData } = e;
+    await prisma.entry.create({
+      data: {
+        ...entryData,
+        tripId: trip.id,
+        userId: users[authorIndex].id,
+      },
+    });
+    entryCount++;
+  }
+  console.log(`  ✓ Created ${entryCount} entries`);
+
+  console.log('\n✅ Seed complete!');
+  console.log('\n📋 Test session tokens:');
+  users.forEach(u => console.log(`  ${u.name}: ${u.tempSession}`));
+  console.log(`\n🔗 Trip invite code: TOKYO1`);
+  console.log(`   Trip ID: ${trip.id}`);
+}
+
+seed()
+  .catch(err => {
+    console.error('Seed failed:', err);
+    process.exit(1);
+  })
+  .finally(() => prisma.$disconnect());

@@ -1,0 +1,151 @@
+// This is your Prisma schema file
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  name         String
+  avatar       String?  // URL to avatar image
+  tempSession  String   @unique // localStorage session token
+  createdAt    DateTime @default(now())
+
+  memberships  TripMembership[]
+  entries      Entry[]
+  reactions    Reaction[]
+  comments     Comment[]
+
+  @@map("users")
+}
+
+model Trip {
+  id          String     @id @default(uuid())
+  title       String
+  destination String     @default("Tokyo, Japan")
+  startDate   DateTime?
+  endDate     DateTime?
+  inviteCode  String     @unique
+  status      TripStatus @default(ACTIVE)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  memberships TripMembership[]
+  entries     Entry[]
+
+  @@map("trips")
+}
+
+enum TripStatus {
+  ACTIVE
+  ENDED
+  ARCHIVED
+}
+
+model TripMembership {
+  id        String   @id @default(uuid())
+  userId    String
+  tripId    String
+  role      Role     @default(MEMBER)
+  joinedAt  DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  trip      Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tripId])
+  @@map("trip_memberships")
+}
+
+enum Role {
+  OWNER
+  MEMBER
+}
+
+model Entry {
+  id            String      @id @default(uuid())
+  tripId        String
+  userId        String
+  type          EntryType
+  // Content fields — populated depending on type
+  rawText       String?     // user's text note or voice transcription
+  contentUrl    String?     // photo/audio/video file URL
+  transcription String?     // Whisper transcription (Phase 2)
+  ocrText       String?     // GPT-4V OCR result (Phase 2)
+  // Location
+  latitude      Float?
+  longitude     Float?
+  address       String?
+  // AI-generated metadata (Phase 2 — columns present now, populated later)
+  category      Category?
+  sentiment     Sentiment?
+  tags          String[]    @default([])
+  // Timestamps
+  capturedAt    DateTime    @default(now()) // when user captured it (may differ from createdAt if offline)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  trip          Trip        @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reactions     Reaction[]
+  comments      Comment[]
+
+  @@index([tripId, createdAt(sort: Desc)])
+  @@map("entries")
+}
+
+enum EntryType {
+  TEXT
+  PHOTO
+  VOICE
+  VIDEO
+  LOCATION
+}
+
+enum Category {
+  FOOD_DRINK
+  SIGHTSEEING
+  ACCOMMODATION
+  TRANSPORTATION
+  SHOPPING
+  TIP_WARNING
+  MISC
+}
+
+enum Sentiment {
+  POSITIVE
+  NEUTRAL
+  NEGATIVE
+}
+
+model Reaction {
+  id        String   @id @default(uuid())
+  entryId   String
+  userId    String
+  emoji     String
+  createdAt DateTime @default(now())
+
+  entry     Entry    @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([entryId, userId, emoji]) // one of each emoji per user per entry
+  @@map("reactions")
+}
+
+model Comment {
+  id        String   @id @default(uuid())
+  entryId   String
+  userId    String
+  text      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  entry     Entry    @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([entryId, createdAt])
+  @@map("comments")
+}

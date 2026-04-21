@@ -1,235 +1,298 @@
-# TokyoTrip Hub — Phase 1 MVP
+# TokyoTrip Hub 🗼
 
-Collaborative travel capture PWA for groups. Phase 1 delivers the full data flow end-to-end:
-users → sessions → trips → real-time entries → reactions → comments.
+> Um PWA colaborativo de inteligência de viagem, construído para capturar, organizar e publicar experiências de viagem — começando pela primavera de Tóquio 2026.
 
-## Stack
-
-| Layer | Tech |
-|-------|------|
-| Frontend | React 18 + Vite PWA |
-| Backend | Node.js + Express + Socket.io |
-| Database | PostgreSQL 16 via Prisma ORM |
-| Cache / Queue | Redis 7 |
-| Media | Local disk (`/uploads`) — swap to S3/Cloudinary in Phase 2 |
+[![Docker](https://img.shields.io/badge/Docker-Compose-blue?logo=docker)](https://docker.com)
+[![React](https://img.shields.io/badge/Frontend-React_18-61DAFB?logo=react)](https://react.dev)
+[![Node.js](https://img.shields.io/badge/Backend-Node.js_18-339933?logo=nodedotjs)](https://nodejs.org)
+[![PostgreSQL](https://img.shields.io/badge/Database-PostgreSQL_16-4169E1?logo=postgresql)](https://postgresql.org)
+[![Redis](https://img.shields.io/badge/Queue-Redis_7-DC382D?logo=redis)](https://redis.io)
+[![PWA](https://img.shields.io/badge/PWA-Offline--First-5A0FC8?logo=pwa)](https://web.dev/progressive-web-apps/)
 
 ---
 
-## Quickstart
+## ✨ O que faz
+
+O TokyoTrip Hub é um **diário de viagem colaborativo sem fricção**, projetado para uso no mundo real durante viagens:
+
+- 📸 **Capture primeiro, organize depois** — tire fotos, grave memos de voz, salve locais, escreva notas rápidas
+- 👥 **Colaboração em tempo real** — 4 viajantes contribuindo simultaneamente para o mesmo feed de viagem
+- 🧠 **Organização automática por IA** — Whisper transcreve áudio, GPT-4V extrai texto de fotos, auto-categoriza e etiqueta tudo
+- 📡 **Offline-first** — funciona nos túneis do metrô de Tóquio; sincroniza quando o WiFi volta
+- 📖 **Exporte para publicar** — gere e-books, guias em PDF ou posts de blog a partir dos dados estruturados da viagem
+
+Construído como um **projeto de portfólio de nível produção** com potencial claro de monetização como SaaS.
+
+---
+
+## 🏗️ Arquitetura
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  DISPOSITIVOS MÓVEIS (iOS/Android PWA)                     │
+│  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐          │
+│  │  Foto   │ │  Voz    │ │  Texto  │ │  Maps   │          │
+│  │  + OCR  │ │+ Whisper│ │  Nota   │ │  Local  │          │
+│  └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘          │
+│       └─────────────┴───────────┴───────────┘              │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │  React PWA + IndexedDB (fila offline)               │   │
+│  │  • Service Worker (Workbox)                         │   │
+│  │  • APIs de Câmera / MediaRecorder / Geolocalização  │   │
+│  │  • Compressão de imagem no cliente (WebP, max 1MB)   │   │
+│  └──────────────────────┬──────────────────────────────┘   │
+└─────────────────────────┼──────────────────────────────────┘
+                          │ WiFi / 4G
+┌─────────────────────────┼──────────────────────────────────┐
+│  BACKEND (Node.js 18)   │                                  │
+│  ┌─────────┐ ┌─────────┐│┌─────────┐ ┌─────────────────┐  │
+│  │ Express │ │Socket.io│││  Bull   │ │  APIs OpenAI    │  │
+│  │  REST   │ │(salas)  │││ Fila    │ │  • Whisper      │  │
+│  │  API    │ │         │││(Redis)  │ │  • GPT-4V       │  │
+│  └────┬────┘ └────┬────┘│└────┬────┘ └─────────────────┘  │
+│       └─────────────┘    │     │                            │
+│  ┌────────────────────┐  │  ┌────────────────────────────┐ │
+│  │  PostgreSQL 16     │  │  │  Disco Local / S3 /         │ │
+│  │  • Usuários, Viagens│  │  │    Cloudinary (mídia)      │ │
+│  │  • Entradas, Reações│  │  │                            │ │
+│  │  • Comentários      │  │  └────────────────────────────┘ │
+│  └────────────────────┘  │                                  │
+└──────────────────────────┴──────────────────────────────────┘
+```
+
+---
+
+## 🚀 Início Rápido
+
+### Pré-requisitos
+
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (ou Colima)
+- [Node.js 18+](https://nodejs.org/) (para desenvolvimento local fora do Docker)
+- Chave de API da OpenAI (para os recursos de IA da Phase 2)
+
+### 1. Clone e Execute
 
 ```bash
-# 1. Clone and enter
-git clone <repo> && cd tokyotrip
+git clone https://github.com/SEU_USUARIO/tokyotrip-hub.git
+cd tokyotrip-hub
 
-# 2. Start everything
-docker-compose up --build
-
-# 3. (First run only) Run migrations + seed demo data
-docker-compose exec backend npx prisma migrate deploy
-docker-compose exec backend npm run seed
+# Inicie todos os serviços (PostgreSQL, Redis, Backend, Frontend)
+docker compose up --build
 ```
 
-App is live at:
-- **Frontend PWA**: http://localhost:5173
-- **Backend API**: http://localhost:3001
-- **API health**: http://localhost:3001/api/health
-
----
-
-## Demo credentials (after seeding)
-
-| Name | Session Token | Role |
-|------|--------------|------|
-| Alex | `demo-session-alex` | Owner |
-| Yuki | `demo-session-yuki` | Member |
-| Kai  | `demo-session-kai`  | Member |
-| Sara | `demo-session-sara` | Member |
-
-**Invite code**: `TOKYO1`
-
-To use a demo session token via the API:
-```
-X-Session-Token: demo-session-alex
-```
-
----
-
-## API Reference
-
-### Users
-
-```
-POST /api/users/register
-Body: { "name": "Alex" }
-Response: { user, sessionToken }
-
-GET /api/users/me
-Header: X-Session-Token: <token>
-```
-
-### Trips
-
-```
-POST /api/trips
-Header: X-Session-Token
-Body: { "title": "Tokyo Spring 2026", "startDate": "2026-04-20", "endDate": "2026-04-28" }
-Response: { trip }  ← includes inviteCode
-
-POST /api/trips/:inviteCode/join
-Header: X-Session-Token
-Response: { trip, membership }
-
-GET /api/trips/:id
-GET /api/trips/:id/feed?cursor=<entryId>&limit=20
-GET /api/trips/:id/members
-```
-
-### Entries
-
-```
-POST /api/entries/trips/:tripId/entries
-Header: X-Session-Token
-# For TEXT:
-Body (JSON): { type: "TEXT", rawText: "...", latitude?, longitude?, address?, capturedAt? }
-
-# For PHOTO/VOICE/VIDEO:
-Body (multipart): file=<binary>, type="PHOTO", rawText?, latitude?, longitude?
-
-DELETE /api/entries/:id
-```
-
-### Reactions
-
-```
-POST /api/entries/:id/reactions
-Body: { "emoji": "❤️" }
-# Toggles — add if not present, remove if already reacted with same emoji
-```
-
-### Comments
-
-```
-POST /api/entries/:id/comments
-Body: { "text": "Amazing!" }
-```
-
----
-
-## WebSocket Events
-
-Connect to `ws://localhost:3001` via Socket.io, then:
-
-```js
-// Join a trip room
-socket.emit('join-trip', tripId)
-
-// Incoming events
-socket.on('new-entry',       ({ entry }) => ...)
-socket.on('entry-deleted',   ({ entryId }) => ...)
-socket.on('reaction-updated',({ entryId, reactions }) => ...)
-socket.on('new-comment',     ({ entryId, comment }) => ...)
-socket.on('member-joined',   ({ tripId, user }) => ...)
-```
-
----
-
-## Data Model
-
-```
-User          — id, name, avatar, tempSession
-Trip          — id, title, destination, dates, inviteCode, status
-TripMembership— userId, tripId, role (OWNER|MEMBER)
-Entry         — id, tripId, userId, type, rawText, contentUrl,
-                transcription (Phase 2), ocrText (Phase 2),
-                lat/lng, address, category, sentiment, tags[], createdAt
-Reaction      — entryId, userId, emoji (unique per triple)
-Comment       — entryId, userId, text
-```
-
----
-
-## Project Structure
-
-```
-tokyotrip/
-├── docker-compose.yml
-├── backend/
-│   ├── Dockerfile
-│   ├── package.json
-│   ├── prisma/
-│   │   └── schema.prisma        ← Full data model
-│   └── src/
-│       ├── index.js             ← Express + Socket.io server
-│       ├── lib/
-│       │   ├── prisma.js        ← Prisma client singleton
-│       │   ├── redis.js         ← Redis client
-│       │   └── seed.js          ← Demo data
-│       ├── middleware/
-│       │   └── session.js       ← Session token auth
-│       └── routes/
-│           ├── trips.js         ← Trip CRUD + feed
-│           ├── entries.js       ← Entry CRUD + file upload + reactions + comments
-│           └── users.js         ← Register + /me
-└── frontend/
-    ├── Dockerfile
-    ├── vite.config.js           ← Vite + PWA plugin
-    └── src/
-        ├── App.jsx              ← Root, session restore, tab routing
-        ├── lib/
-        │   ├── api.js           ← All fetch calls
-        │   └── media.js         ← Image compression + FormData builder
-        ├── hooks/
-        │   └── useSocket.js     ← Socket.io hook
-        ├── screens/
-        │   ├── OnboardScreen.jsx← Register + create/join trip
-        │   ├── FeedScreen.jsx   ← Main feed + real-time updates
-        │   └── MapScreen.jsx    ← Geotagged entries (real map in Phase 2)
-        └── components/
-            ├── EntryCard.jsx    ← Feed entry with reactions + comments
-            ├── CaptureBar.jsx   ← Text + photo capture with compression
-            └── InviteModal.jsx  ← Invite code + member list
-```
-
----
-
-## Phase 2 Checklist (after Phase 1 is stable)
-
-- [ ] **Offline / IndexedDB** — capture queue when offline, sync on reconnect
-- [ ] **AI Pipeline** — Whisper transcription, GPT-4V OCR, auto-categorisation
-- [ ] **Voice recording** — MediaRecorder API → upload → transcribe
-- [ ] **Video capture** — compress to 720p H.264 before upload
-- [ ] **Real map** — Leaflet + OpenStreetMap tiles with actual pin positions
-- [ ] **S3/Cloudinary** — swap local `/uploads` disk for cloud media storage
-- [ ] **Export engine** — Puppeteer PDF generation from trip entries
-- [ ] **PWA offline app shell** — Service Worker + IndexedDB background sync
-
----
-
-## Development (without Docker)
+### 2. Inicialize o Banco de Dados
 
 ```bash
-# Backend
+# Em um segundo terminal:
+docker compose exec backend npx prisma migrate deploy
+docker compose exec backend npm run seed
+```
+
+### 3. Acesse
+
+| Serviço | URL |
+|---------|-----|
+| Frontend (PWA) | http://localhost:5173 |
+| Health da API | http://localhost:3001/api/health |
+| Documentação da API | http://localhost:3001/api (Swagger) |
+
+### 4. Teste no Celular
+
+Descubra seu IP local:
+```bash
+ipconfig getifaddr en0  # macOS
+# ou
+hostname -I  # Linux
+```
+
+Acesse no celular: `http://SEU_IP:5173`
+
+> **Nota:** O CORS do backend está pré-configurado para `localhost:5173` e `192.168.x.x:5173`. Adicione seu IP específico em `backend/src/index.js` se necessário.
+
+---
+
+## 📱 Instalação do PWA
+
+### iOS (Safari)
+1. Abra `http://SEU_IP:5173` no Safari
+2. Toque em Compartilhar → "Adicionar à Tela de Início"
+3. Inicie pela tela inicial (tela cheia, sem barra do navegador)
+
+### Android (Chrome)
+1. Abra a URL no Chrome
+2. Toque no menu → "Adicionar à tela inicial" ou "Instalar aplicativo"
+3. Inicie como app standalone
+
+---
+
+## 🧪 Desenvolvimento
+
+### Local (sem Docker)
+
+```bash
+# Terminal 1 — Banco de Dados e Cache
+docker compose up postgres redis
+
+# Terminal 2 — Backend
 cd backend
-cp .env.example .env          # edit DATABASE_URL + REDIS_URL
+cp .env.example .env
 npm install
 npx prisma migrate dev
-npm run seed
-npm run dev                   # http://localhost:3001
+npx prisma generate
+npm run dev
 
-# Frontend (separate terminal)
+# Terminal 3 — Frontend
 cd frontend
+cp .env.example .env
 npm install
-npm run dev                   # http://localhost:5173
+npm run dev
+```
+
+### Variáveis de Ambiente
+
+Crie `backend/.env`:
+```env
+DATABASE_URL="postgresql://postgres:postgres@localhost:5432/tokyotrip?schema=public"
+REDIS_URL="redis://localhost:6379"
+OPENAI_API_KEY="sk-..."
+PORT=3001
+UPLOAD_DIR="./uploads"
+```
+
+Crie `frontend/.env`:
+```env
+VITE_API_URL="http://localhost:3001"
 ```
 
 ---
 
-## Deployment (Railway / Render)
+## 📡 Endpoints da API
 
-1. Push repo to GitHub
-2. Create services: PostgreSQL, Redis, web service (backend), static site (frontend)
-3. Set env vars from `.env.example`
-4. Backend start command: `npx prisma migrate deploy && node src/index.js`
-5. Frontend build command: `npm run build`, publish dir: `dist`
-6. Update `FRONTEND_URL` in backend and `VITE_API_URL` in frontend to production URLs
-# trip-hub
+### Autenticação
+| Método | Endpoint | Descrição |
+|--------|----------|-----------|
+| POST | `/api/users/register` | Cria usuário, retorna token de sessão |
+| GET | `/api/users/me` | Obtém usuário atual |
+
+### Viagens
+| Método | Endpoint | Descrição |
+|--------|----------|-----------|
+| POST | `/api/trips` | Cria viagem (retorna código de convite) |
+| POST | `/api/trips/:code/join` | Entra na viagem pelo código |
+| GET | `/api/trips/:id` | Detalhes da viagem |
+| GET | `/api/trips/:id/feed` | Feed paginado de entradas |
+| GET | `/api/trips/:id/members` | Lista membros da viagem |
+
+### Entradas
+| Método | Endpoint | Descrição |
+|--------|----------|-----------|
+| POST | `/api/entries/trips/:id/entries` | Cria entrada (multipart para mídia) |
+| DELETE | `/api/entries/:id` | Deleta entrada |
+| POST | `/api/entries/:id/reactions` | Alterna reação de emoji |
+| POST | `/api/entries/:id/comments` | Adiciona comentário |
+| GET | `/api/entries/:id/status` | Status de processamento da IA |
+
+---
+
+## 🗺️ Roadmap
+
+### Phase 1 ✅ — Fundação
+- [x] Stack Docker Compose (PostgreSQL, Redis, Node, React)
+- [x] Schema Prisma com todas as tabelas + hooks da Phase 2
+- [x] API REST com Express
+- [x] Salas em tempo real com Socket.io
+- [x] Shell PWA com Service Worker
+- [x] Captura de fotos com compressão no cliente
+- [x] Reações e comentários
+- [x] Códigos de convite e entrada em viagens
+
+### Phase 2 🔄 — Inteligência
+- [ ] Fila offline com IndexedDB e sync em background
+- [ ] Transcrição de áudio com OpenAI Whisper
+- [ ] OCR + auto-categorização com GPT-4 Vision
+- [ ] Captura de memos de voz (MediaRecorder)
+- [ ] Endpoint de status de processamento da IA
+
+### Phase 3 📖 — Publicação
+- [ ] Motor de exportação (Puppeteer → PDF/EPUB)
+- [ ] Templates de e-book
+- [ ] Visualização de mapa com todas as entradas
+- [ ] Extração de custos de recibos
+
+### Phase 4 🚀 — SaaS
+- [ ] Contas de usuário (substituir sessões temporárias)
+- [ ] Múltiplas viagens por usuário
+- [ ] Tiers de assinatura (Freemium)
+- [ ] Armazenamento Cloudinary/S3
+- [ ] Publicação com domínio personalizado
+
+---
+
+## 🧠 Recursos de IA
+
+### Processamento de Áudio (Whisper)
+- Grava memos de voz durante a viagem
+- Transcreve automaticamente para texto pesquisável
+- Armazena áudio + transcrição
+
+### Inteligência de Imagem (GPT-4V)
+- **OCR**: Extrai texto de cardápios, placas, recibos
+- **Categorização**: Auto-classifica em Comida, Passeios, Transporte, etc.
+- **Etiquetagem**: Gera tags relevantes ("ramen", "shibuya", "barato")
+- **Sentimento**: Detecta experiências positivas/neutras/negativas
+
+---
+
+## 🛠️ Stack Tecnológico
+
+| Camada | Tecnologia |
+|--------|-----------|
+| **Frontend** | React 18, Vite, Workbox (PWA) |
+| **Backend** | Node.js 18, Express, Socket.io |
+| **Banco de Dados** | PostgreSQL 16, Prisma ORM |
+| **Cache/Fila** | Redis 7, Bull |
+| **IA** | OpenAI Whisper + GPT-4 Vision |
+| **Mídia** | Compressão no cliente, disco local (pronto para S3) |
+| **Exportação** | Puppeteer (Phase 3) |
+
+---
+
+## 📸 Screenshots
+
+| Feed | Captura | Mapa | Exportação |
+|------|---------|------|------------|
+| ![Feed](docs/screenshots/feed.png) | ![Captura](docs/screenshots/capture.png) | ![Mapa](docs/screenshots/map.png) | ![Exportação](docs/screenshots/export.png) |
+
+> *Screenshots da viagem Primavera de Tóquio 2026*
+
+---
+
+## 🤝 Contribuição
+
+Este projeto foi construído como **peça de portfólio** e potencial **Micro-SaaS**. Contribuições são bem-vindas:
+
+1. Faça um fork do repositório
+2. Crie uma branch: `git checkout -b feature/coisa-incrivel`
+3. Commit: `git commit -m 'Adiciona coisa incrivel'`
+4. Push: `git push origin feature/coisa-incrivel`
+5. Abra um Pull Request
+
+---
+
+## 📄 Licença
+
+MIT License — veja [LICENSE](LICENSE) para detalhes.
+
+---
+
+## 🙋 Sobre a Autora
+
+Construído por [Seu Nome](https://github.com/SEU_USUARIO) para uma viagem real a Tóquio com 3 amigos. O objetivo: capturar tudo sem esforço durante a viagem, depois publicar as melhores descobertas como um e-book para outros viajantes.
+
+**Dúvidas?** Abra uma issue ou entre em contato no [Twitter/X](https://twitter.com/SEU_HANDLE).
+
+---
+
+<p align="center">
+  <sub>Construído com ❤️, ☕, e muita expectativa por Tóquio.</sub>
+</p>
