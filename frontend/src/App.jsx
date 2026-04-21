@@ -3,11 +3,13 @@ import { api } from './lib/api.js';
 import OnboardScreen from './screens/OnboardScreen.jsx';
 import FeedScreen from './screens/FeedScreen.jsx';
 import MapScreen from './screens/MapScreen.jsx';
+import ExportModal from '../components/ExportModal';
 
 export default function App() {
   const [user, setUser] = useState(null);
   const [trip, setTrip] = useState(null);
-  const [tab, setTab] = useState('feed');
+  const [activeTab, setActiveTab] = useState('feed');
+  const [showExport, setShowExport] = useState(false);
   const [loading, setLoading] = useState(true);
 
   // Restore session on mount
@@ -38,11 +40,11 @@ export default function App() {
     setTrip(trip);
   };
 
-  const handleLeaveTrip = () => {
-    localStorage.removeItem('currentTrip');
-    setTrip(null);
-    setTab('feed');
-  };
+   const handleLeaveTrip = () => {
+     localStorage.removeItem('currentTrip');
+     setTrip(null);
+     setActiveTab('feed');
+   };
 
   if (loading) {
     return (
@@ -58,41 +60,19 @@ export default function App() {
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--bg)', position: 'relative' }}>
-      {/* Screen content */}
-      <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
-        {tab === 'feed' && <FeedScreen user={user} trip={trip} />}
-        {tab === 'map'  && <MapScreen  user={user} trip={trip} />}
-      </div>
+       {/* Screen content */}
+       <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
+         {activeTab === 'feed' && <FeedScreen user={user} trip={trip} />}
+         {activeTab === 'map'  && <MapScreen  user={user} trip={trip} />}
+         {showExport && <ExportModal tripId={trip.id} onClose={() => setShowExport(false)} />}
+       </div>
 
-      {/* Bottom nav */}
-      <nav style={{
-        display: 'flex',
-        background: 'var(--bg2)',
-        borderTop: '1px solid var(--border)',
-        paddingBottom: 'calc(8px + var(--safe-bottom))',
-        flexShrink: 0,
-      }}>
-        {[
-          { id: 'feed', icon: '📱', label: 'Feed' },
-          { id: 'map',  icon: '🗺',  label: 'Map' },
-        ].map(({ id, icon, label }) => (
-          <button
-            key={id}
-            onClick={() => setTab(id)}
-            style={{
-              flex: 1, background: 'none', border: 'none', cursor: 'pointer',
-              display: 'flex', flexDirection: 'column', alignItems: 'center',
-              gap: 3, padding: '10px 0 4px',
-              color: tab === id ? 'var(--accent)' : 'var(--text3)',
-              fontSize: 10, fontFamily: 'DM Sans, sans-serif',
-              transition: 'color 0.15s',
-            }}
-          >
-            <span style={{ fontSize: 22 }}>{icon}</span>
-            {label}
-          </button>
-        ))}
-      </nav>
+       {/* Tab bar */}
+       <div className="tab-bar">
+         <button onClick={() => setActiveTab('feed')} className={activeTab === 'feed' ? 'active' : ''}>Feed</button>
+         <button onClick={() => setActiveTab('map')} className={activeTab === 'map' ? 'active' : ''}>Map</button>
+         <button onClick={() => setShowExport(true)}>📖 Export</button>
+       </div>
     </div>
   );
 }
