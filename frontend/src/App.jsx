@@ -55,11 +55,16 @@ export default function App() {
     setTrip(null);
   };
 
-   const handleLeaveTrip = () => {
-     localStorage.removeItem('currentTrip');
-     setTrip(null);
-     setActiveTab('feed');
-   };
+const handleLeaveTrip = () => {
+    localStorage.removeItem('currentTrip');
+    setTrip(null);
+    setActiveTab('feed');
+  };
+
+  const handleSwitchTrip = () => {
+    localStorage.removeItem('currentTrip');
+    setTrip(null);
+  };
 
   if (loading) {
     return (
@@ -83,7 +88,7 @@ return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--bg)' }}>
       {/* Screen content */}
       <div style={{ flex: 1, minHeight: 0 }}>
-        {activeTab === 'feed' && <FeedScreen user={user} trip={trip} />}
+        {activeTab === 'feed' && <FeedScreen user={user} trip={trip} onSwitchTrip={handleSwitchTrip} />}
         {activeTab === 'map' && <MapScreen tripId={trip.id} />}
         {showExport && <ExportModal tripId={trip.id} onClose={() => setShowExport(false)} />}
       </div>

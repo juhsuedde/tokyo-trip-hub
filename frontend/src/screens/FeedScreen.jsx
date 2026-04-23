@@ -5,7 +5,7 @@ import EntryCard from '../components/EntryCard.jsx';
 import CaptureBar from '../components/CaptureBar.jsx';
 import InviteModal from '../components/InviteModal.jsx';
 
-export default function FeedScreen({ user, trip }) {
+export default function FeedScreen({ user, trip, onSwitchTrip }) {
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -115,6 +115,9 @@ export default function FeedScreen({ user, trip }) {
             <p className="feed-dest">{trip.destination}</p>
           </div>
           <div className="feed-header-right">
+            <button onClick={onSwitchTrip} style={{ background: 'var(--bg3)', border: 'none', color: 'var(--text2)', padding: '6px 12px', borderRadius: 8, cursor: 'pointer', fontSize: 12, marginRight: 8 }}>
+              Switch Trip
+            </button>
             <div className="live-pill">
               <span className="live-dot" /> Live
             </div>
