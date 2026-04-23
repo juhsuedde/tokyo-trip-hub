@@ -5,7 +5,12 @@ const { prisma } = require('../lib/prisma');
  * Attaches req.sessionToken — does NOT require it (some routes are public).
  */
 function sessionMiddleware(req, res, next) {
-  req.sessionToken = req.headers['x-session-token'] || null;
+  const bearerAuth = req.headers.authorization;
+  if (bearerAuth && bearerAuth.startsWith('Bearer ')) {
+    req.sessionToken = bearerAuth.slice(7);
+  } else {
+    req.sessionToken = req.headers['x-session-token'] || null;
+  }
   next();
 }
 
@@ -14,7 +19,9 @@ function sessionMiddleware(req, res, next) {
  * Returns 401 if missing/invalid.
  */
 async function requireUser(req, res, next) {
-  const token = req.sessionToken;
+  const token = req.headers['x-session-token'] || 
+                (req.headers.authorization && req.headers.authorization.startsWith('Bearer ') 
+                  ? req.headers.authorization.slice(7) : null);
   if (!token) {
     return res.status(401).json({ error: 'Missing X-Session-Token header' });
   }

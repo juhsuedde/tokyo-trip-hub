@@ -85,6 +85,9 @@ app.use('/uploads', express.static(uploadDir));
 // Token auth middleware
 app.use(optionalAuth);
 
+// Legacy session middleware for backward compat
+app.use(sessionMiddleware);
+
 // API Routes
 app.use('/api/auth', authRouter);
 app.use('/api/trips', tripsRouter);
