@@ -44,11 +44,27 @@ export default function OnboardScreen({ user, onComplete, onLogout }) {
     onComplete(user, trip);
   }
 
+  const [showConfirmLeave, setShowConfirmLeave] = useState(null);
+
   async function handleLeaveTrip(tripId) {
     if (!confirm('Leave this trip?')) return;
     try {
       await api.leaveTrip(tripId);
-      setTrips(trips.filter(t => t.id !== tripId));
+      await loadTrips();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function confirmLeaveTrip(tripId) {
+    setShowConfirmLeave(tripId);
+  }
+
+  async function executeLeaveTrip() {
+    try {
+      await api.leaveTrip(showConfirmLeave);
+      setShowConfirmLeave(null);
+      await loadTrips();
     } catch (err) {
       setError(err.message);
     }
@@ -94,7 +110,7 @@ export default function OnboardScreen({ user, onComplete, onLogout }) {
                 </div>
               </div>
               <button
-                onClick={(e) => { e.stopPropagation(); handleLeaveTrip(trip.id); }}
+                onClick={(e) => { e.stopPropagation(); confirmLeaveTrip(trip.id); }}
                 style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', padding: 8, fontSize: 18 }}
               >
                 ×
@@ -142,69 +158,18 @@ export default function OnboardScreen({ user, onComplete, onLogout }) {
         Join with Invite Code
       </button>
       <button className="btn-ghost" onClick={onLogout} style={{ marginTop: 16 }}>
-        Logout
-      </button>
-    </div>
-  );
-
-  if (step === 'create') return (
-    <div style={shell}>
-      <button onClick={() => setStep('start')} style={backBtn}>←</button>
-      <h2 className="syne" style={{ fontSize: 24, fontWeight: 700, marginBottom: 6 }}>
-        Plan your <span style={{ color: 'var(--accent)' }}>adventure</span>
-      </h2>
-      <p style={{ color: 'var(--text3)', fontSize: 13, marginBottom: 24 }}>
-        You'll get an invite code to share with your group.
-      </p>
-
-      <label style={labelStyle}>Trip name</label>
-      <input value={tripTitle} onChange={e => setTripTitle(e.target.value)} placeholder="Tokyo Spring 2026" style={inputStyle} />
-
-      <label style={labelStyle}>Dates (optional)</label>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
-        <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} />
-        <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} />
-      </div>
-
-      {error && <p style={errorStyle}>{error}</p>}
-
-      <div style={{ marginTop: 'auto', paddingTop: 24 }}>
-        <button className="btn-primary" onClick={handleCreate} disabled={loading}>
-          {loading ? 'Creating...' : 'Create Trip & Get Invite Code'}
+Logout
         </button>
+        {showConfirmLeave && (
+          <ConfirmModal
+            tripTitle={trips.find(t => t.id === showConfirmLeave)?.title}
+            onConfirm={() => executeLeaveTrip()}
+            onCancel={() => setShowConfirmLeave(null)}
+          />
+        )}
       </div>
-    </div>
-  );
-
-  if (step === 'join') return (
-    <div style={shell}>
-      <button onClick={() => setStep('start')} style={backBtn}>←</button>
-      <h2 className="syne" style={{ fontSize: 24, fontWeight: 700, marginBottom: 6 }}>
-        Join a <span style={{ color: 'var(--accent)' }}>trip</span>
-      </h2>
-      <p style={{ color: 'var(--text3)', fontSize: 13, marginBottom: 24 }}>
-        Enter the 6-character invite code from your group.
-      </p>
-
-      <label style={labelStyle}>Invite code</label>
-      <input
-        value={inviteCode}
-        onChange={e => setInviteCode(e.target.value.toUpperCase())}
-        placeholder="TOKYO1"
-        maxLength={6}
-        style={{ ...inputStyle, textTransform: 'uppercase', letterSpacing: '0.2em', fontSize: 20, textAlign: 'center' }}
-      />
-
-      {error && <p style={errorStyle}>{error}</p>}
-
-      <div style={{ marginTop: 'auto', paddingTop: 24 }}>
-        <button className="btn-primary" onClick={handleJoin} disabled={loading}>
-          {loading ? 'Joining...' : 'Join Trip'}
-        </button>
-      </div>
-    </div>
-  );
-}
+    );
+  }
 
 const shell = {
   height: '100%',
@@ -251,3 +216,20 @@ const tripCard = {
   marginBottom: 12,
   cursor: 'pointer',
 };
+
+function ConfirmModal({ tripTitle, onConfirm, onCancel }) {
+  return (
+    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
+      <div style={{ background: 'var(--bg2)', padding: 24, borderRadius: 16, maxWidth: 320, margin: 16 }}>
+        <h3 style={{ marginBottom: 12, fontSize: 18 }}>Leave "{tripTitle}"?</h3>
+        <p style={{ color: 'var(--text3)', marginBottom: 20, fontSize: 14 }}>You'll need a new invite code to rejoin this trip.</p>
+        <button onClick={onConfirm} className="btn-primary" style={{ width: '100%', marginBottom: 10 }}>
+          Leave Trip
+        </button>
+        <button onClick={onCancel} className="btn-ghost" style={{ width: '100%' }}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
