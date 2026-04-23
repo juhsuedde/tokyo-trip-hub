@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { api } from '../lib/api.js';
 
-export default function OnboardScreen({ onComplete }) {
-  const [step, setStep] = useState('start'); // start | create | join | registering
-  const [name, setName] = useState('');
+export default function OnboardScreen({ user, onComplete }) {
+  const [step, setStep] = useState('start'); // start | create | join
+  const [hasAccount, setHasAccount] = useState(!!user);
   const [tripTitle, setTripTitle] = useState('Tokyo Spring 2026');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -11,14 +11,11 @@ export default function OnboardScreen({ onComplete }) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  async function registerAndRun(fn) {
+  async function handleTripAction(fn) {
     setError('');
     setLoading(true);
     try {
-      if (!name.trim()) { setError('Enter your name first'); setLoading(false); return; }
-      const { user, sessionToken } = await api.register(name.trim());
-      localStorage.setItem('sessionToken', sessionToken);
-      const result = await fn(user);
+      const result = await fn();
       onComplete(user, result.trip);
     } catch (err) {
       setError(err.message);
@@ -27,7 +24,7 @@ export default function OnboardScreen({ onComplete }) {
     }
   }
 
-  const handleCreate = () => registerAndRun(async () => {
+  const handleCreate = () => handleTripAction(async () => {
     if (!tripTitle.trim()) throw new Error('Trip name is required');
     return api.createTrip({
       title: tripTitle.trim(),
@@ -36,7 +33,7 @@ export default function OnboardScreen({ onComplete }) {
     });
   });
 
-  const handleJoin = () => registerAndRun(async () => {
+  const handleJoin = () => handleTripAction(async () => {
     if (!inviteCode.trim()) throw new Error('Enter the invite code');
     return api.joinTrip(inviteCode.trim().toUpperCase());
   });
@@ -55,15 +52,11 @@ export default function OnboardScreen({ onComplete }) {
         </p>
       </div>
 
-      <div style={{ marginBottom: 16 }}>
-        <label style={labelStyle}>Your name</label>
-        <input
-          value={name}
-          onChange={e => setName(e.target.value)}
-          placeholder="Alex, Yuki, Sara..."
-          autoComplete="given-name"
-        />
-      </div>
+      {user && (
+        <p style={{ textAlign: 'center', color: 'var(--text2)', fontSize: 14, marginBottom: 24 }}>
+          Welcome, <strong>{user.name}</strong>!
+        </p>
+      )}
 
       <button className="btn-primary" onClick={() => setStep('create')} style={{ marginBottom: 10 }}>
         Create a Trip
@@ -73,7 +66,7 @@ export default function OnboardScreen({ onComplete }) {
       </button>
 
       <p style={{ textAlign: 'center', color: 'var(--text3)', fontSize: 12, marginTop: 20 }}>
-        No account needed · Works offline
+        {user ? 'Create or join a trip to get started' : 'No account needed · Works offline'}
       </p>
     </div>
   );
@@ -87,9 +80,6 @@ export default function OnboardScreen({ onComplete }) {
       <p style={{ color: 'var(--text3)', fontSize: 13, marginBottom: 24 }}>
         You'll get an invite code to share with your group.
       </p>
-
-      <label style={labelStyle}>Your name</label>
-      <input value={name} onChange={e => setName(e.target.value)} placeholder="Your name" style={inputStyle} />
 
       <label style={labelStyle}>Trip name</label>
       <input value={tripTitle} onChange={e => setTripTitle(e.target.value)} placeholder="Tokyo Spring 2026" style={inputStyle} />
@@ -119,9 +109,6 @@ export default function OnboardScreen({ onComplete }) {
       <p style={{ color: 'var(--text3)', fontSize: 13, marginBottom: 24 }}>
         Enter the 6-character invite code from your group.
       </p>
-
-      <label style={labelStyle}>Your name</label>
-      <input value={name} onChange={e => setName(e.target.value)} placeholder="Your name" style={inputStyle} />
 
       <label style={labelStyle}>Invite code</label>
       <input

@@ -67,9 +67,9 @@ export default function App() {
     return <AuthScreen onLogin={handleAuth} />;
   }
 
-  // Logged in but no trip → Onboard
+  // Logged in but no trip → Onboard (pass logged-in user)
   if (!trip) {
-    return <OnboardScreen onComplete={handleOnboarded} />;
+    return <OnboardScreen user={user} onComplete={handleOnboarded} />;
   }
 
 return (
