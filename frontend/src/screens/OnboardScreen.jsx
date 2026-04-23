@@ -209,10 +209,19 @@ export default function OnboardScreen({ user, onComplete, onLogout }) {
   }
 
   // Confirm modal - overlay on top of everything
-  console.log('trips:', trips, 'showConfirmLeave:', showConfirmLeave);
+  console.log('BEFORE FIND: trips length:', trips?.length, 'showConfirmLeave:', showConfirmLeave);
+  if (!trips || trips.length === 0) {
+    console.log('ERROR: trips is empty or null!');
+    return (
+      <>
+        <div style={shell}>
+          <h2>Error: No trips loaded</h2>
+          <button onClick={() => setShowConfirmLeave(null)}>Close</button>
+        </div>
+      </>
+    );
+  }
   const confirmTrip = trips.find(t => t.id === showConfirmLeave);
-  console.log('confirmTrip:', confirmTrip);
-  if (showConfirmLeave) {
     return (
       <ConfirmModal
         tripTitle={confirmTrip?.title}
