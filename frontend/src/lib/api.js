@@ -19,7 +19,7 @@ function isNetworkError(err) {
 async function request(method, path, body, isFormData = false) {
   const token = getSession();
   const headers = {};
-  if (token) headers['X-Session-Token'] = token;
+  if (token) headers['Authorization'] = `Bearer ${token}`;
   if (!isFormData) headers['Content-Type'] = 'application/json';
 
   const res = await fetch(`${BASE}/api${path}`, {

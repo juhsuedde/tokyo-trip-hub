@@ -13,6 +13,10 @@ function extractToken(req) {
   if (auth && auth.startsWith('Bearer ')) {
     return auth.slice(7);
   }
+  // Try old X-Session-Token header (backward compat)
+  if (req.headers['x-session-token']) {
+    return req.headers['x-session-token'];
+  }
   // Try cookie
   if (req.cookies && req.cookies.token) {
     return req.cookies.token;
