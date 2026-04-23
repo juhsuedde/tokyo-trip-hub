@@ -107,9 +107,9 @@ export default function FeedScreen({ user, trip }) {
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      {/* Header */}
+      {/* Header — top padding accounts for status bar on iPhone */}
       <div style={{
-        padding: '52px 20px 12px',
+        padding: 'calc(env(safe-area-inset-top, 12px) + 12px) 20px 12px',
         borderBottom: '1px solid var(--border)',
         flexShrink: 0,
         background: 'var(--bg)',
@@ -172,7 +172,7 @@ export default function FeedScreen({ user, trip }) {
       <div
         ref={feedRef}
         onScroll={handleScroll}
-        style={{ flex: 1, overflowY: 'auto', padding: '12px 16px 160px', display: 'flex', flexDirection: 'column', gap: 12 }}
+        style={{ flex: 1, overflowY: 'auto', padding: '12px 16px calc(var(--tab-bar-total) + 72px)', display: 'flex', flexDirection: 'column', gap: 12 }}
       >
         {loading ? (
           Array.from({ length: 3 }).map((_, i) => <SkeletonCard key={i} />)

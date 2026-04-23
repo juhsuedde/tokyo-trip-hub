@@ -1,5 +1,6 @@
 @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,400&display=swap');
 
+/* ─── Design Tokens ─────────────────────────────────────────────────────────── */
 :root {
   --bg: #0a0a0f;
   --bg2: #12121a;
@@ -14,9 +15,19 @@
   --text3: #5e5d7a;
   --border: #2a2a42;
   --radius: 16px;
-  --safe-bottom: env(safe-area-inset-bottom, 0px);
+
+  /* Safe areas — critical for iPhone notch / Dynamic Island / home bar */
+  --sat: env(safe-area-inset-top, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+
+  /* Tab bar height + safe area for content padding */
+  --tab-bar-h: 56px;
+  --tab-bar-total: calc(var(--tab-bar-h) + var(--sab));
 }
 
+/* ─── Reset ──────────────────────────────────────────────────────────────────── */
 *,
 *::before,
 *::after {
@@ -44,20 +55,13 @@ body {
   touch-action: manipulation;
 }
 
-.syne {
-  font-family: 'Syne', sans-serif;
-}
+.syne { font-family: 'Syne', sans-serif; }
 
 /* Scrollbars */
-::-webkit-scrollbar {
-  display: none;
-}
+::-webkit-scrollbar { display: none; }
+* { scrollbar-width: none; }
 
-* {
-  scrollbar-width: none;
-}
-
-/* Inputs */
+/* ─── Inputs ─────────────────────────────────────────────────────────────────── */
 input,
 textarea,
 select {
@@ -67,7 +71,7 @@ select {
   padding: 13px 16px;
   color: var(--text);
   font-family: 'DM Sans', sans-serif;
-  font-size: 15px;
+  font-size: 16px; /* 16px prevents iOS auto-zoom */
   outline: none;
   width: 100%;
   transition: border-color 0.2s;
@@ -84,7 +88,7 @@ textarea::placeholder {
   color: var(--text3);
 }
 
-/* Buttons */
+/* ─── Shared Buttons ─────────────────────────────────────────────────────────── */
 .btn-primary {
   background: var(--accent);
   color: #fff;
@@ -98,6 +102,7 @@ textarea::placeholder {
   transition: opacity 0.15s, transform 0.15s;
   width: 100%;
   text-align: center;
+  min-height: 48px; /* 44px touch target */
 }
 
 .btn-primary:active {
@@ -122,13 +127,14 @@ textarea::placeholder {
   transition: border-color 0.2s;
   width: 100%;
   text-align: center;
+  min-height: 48px;
 }
 
 .btn-ghost:active {
   border-color: var(--text2);
 }
 
-/* Utility */
+/* ─── Utility ────────────────────────────────────────────────────────────────── */
 .sr-only {
   position: absolute;
   width: 1px;
@@ -141,35 +147,29 @@ textarea::placeholder {
   border: 0;
 }
 
-/* Animations */
+/* ─── Animations ─────────────────────────────────────────────────────────────── */
 @keyframes fadeSlideUp {
-  from {
-    opacity: 0;
-    transform: translateY(12px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes pulse {
-
-  0%,
-  100% {
-    opacity: 1;
-  }
-
-  50% {
-    opacity: 0.4;
-  }
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
 }
 
 @keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes recordPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 77, 109, 0.5); }
+  50%       { box-shadow: 0 0 0 8px rgba(255, 77, 109, 0); }
 }
 
 .animate-in {
@@ -177,14 +177,475 @@ textarea::placeholder {
 }
 
 .spinner {
+  display: inline-block;
   width: 20px;
   height: 20px;
   border: 2px solid var(--border);
   border-top-color: var(--accent);
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
 }
 
+/* ─── Tab Bar ────────────────────────────────────────────────────────────────── */
+.tab-bar {
+  display: flex;
+  align-items: stretch;
+  height: var(--tab-bar-total);
+  padding-bottom: var(--sab);
+  background: var(--bg2);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+  position: relative;
+  z-index: 100;
+}
+
+.tab-bar button {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text3);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  transition: color 0.15s;
+  -webkit-tap-highlight-color: transparent;
+  padding: 0 4px;
+}
+
+.tab-bar button:active {
+  background: var(--bg3);
+}
+
+.tab-bar button.active {
+  color: var(--accent);
+}
+
+/* ─── OfflineBanner ──────────────────────────────────────────────────────────── */
+.offline-banner {
+  position: fixed;
+  top: calc(var(--sat) + 8px);
+  left: 12px;
+  right: 12px;
+  z-index: 500;
+  animation: slideDown 0.3s ease both;
+}
+
+.offline-banner-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--accent2);
+  color: #1a1200;
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+}
+
+.offline-banner-icon {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.offline-banner-message {
+  flex: 1;
+  line-height: 1.4;
+}
+
+/* ─── CaptureBar ─────────────────────────────────────────────────────────────── */
+.capture-bar {
+  position: absolute;
+  bottom: var(--tab-bar-total);
+  left: 0;
+  right: 0;
+  padding: 8px 12px 10px;
+  background: linear-gradient(to top, var(--bg) 60%, transparent);
+  z-index: 50;
+}
+
+.recording-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--accent);
+  font-weight: 500;
+  margin-bottom: 6px;
+  padding: 0 4px;
+  animation: fadeSlideUp 0.2s ease both;
+}
+
+.rec-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+  animation: pulse 1s ease infinite;
+}
+
+.capture-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 100px;
+  padding: 6px 6px 6px 16px;
+}
+
+.capture-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 6px 0;
+  font-size: 15px;
+  color: var(--text);
+  outline: none;
+  min-width: 0;
+  height: 36px;
+}
+
+.capture-input::placeholder {
+  color: var(--text3);
+}
+
+.capture-input:focus {
+  border-color: transparent;
+}
+
+.capture-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  border-radius: 50%;
+  background: var(--bg4);
+  border: none;
+  cursor: pointer;
+  font-size: 18px;
+  transition: background 0.15s, transform 0.1s;
+  -webkit-tap-highlight-color: transparent;
+  line-height: 1;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.capture-btn:active {
+  transform: scale(0.9);
+  background: var(--border);
+}
+
+.capture-btn:disabled {
+  opacity: 0.4;
+}
+
+.capture-btn--recording {
+  background: var(--accent);
+  animation: recordPulse 1.2s ease infinite;
+}
+
+/* ─── EntryCard ──────────────────────────────────────────────────────────────── */
+.entry-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  animation: fadeSlideUp 0.2s ease both;
+}
+
+.entry-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px 10px;
+}
+
+.avatar {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  border-radius: 50%;
+  background: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.username {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.entry-time {
+  font-size: 11px;
+  color: var(--text3);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.entry-delete {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: transparent;
+  border: none;
+  color: var(--text3);
+  font-size: 14px;
+  cursor: pointer;
+  border-radius: 50%;
+  flex-shrink: 0;
+  -webkit-tap-highlight-color: transparent;
+  /* Expand hit area */
+  padding: 6px;
+  margin: -6px;
+}
+
+.entry-delete:active {
+  background: rgba(255, 77, 109, 0.15);
+  color: var(--accent);
+}
+
+.entry-text {
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--text);
+  padding: 0 14px 12px;
+}
+
+.entry-photo {
+  width: 100%;
+  display: block;
+  max-height: 320px;
+  object-fit: cover;
+  background: var(--bg3);
+}
+
+.entry-audio {
+  width: 100%;
+  display: block;
+  margin: 0 0 8px;
+  accent-color: var(--accent);
+  /* Custom minimal style */
+  height: 40px;
+  padding: 0 14px;
+  box-sizing: border-box;
+}
+
+.entry-ai-pending {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px 10px;
+  font-size: 12px;
+  color: var(--text3);
+}
+
+.entry-transcription,
+.entry-ocr {
+  margin: 0 14px 10px;
+  padding: 10px 12px;
+  background: var(--bg3);
+  border-radius: 10px;
+  border-left: 2px solid var(--purple);
+}
+
+.entry-label {
+  display: block;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text3);
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+
+.entry-transcription p,
+.entry-ocr p {
+  font-size: 13px;
+  color: var(--text2);
+  line-height: 1.5;
+}
+
+/* Tags / badges row */
+.entry-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 2px 14px 10px;
+}
+
+.entry-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 100px;
+  font-weight: 500;
+  white-space: nowrap;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.entry-badge--category {
+  background: rgba(167, 139, 250, 0.15);
+  color: var(--purple);
+  border: 1px solid rgba(167, 139, 250, 0.3);
+}
+
+.entry-badge--sentiment {
+  background: var(--bg3);
+  font-size: 14px;
+  padding: 2px 6px;
+}
+
+.entry-badge--tag {
+  background: rgba(6, 214, 160, 0.1);
+  color: var(--accent3);
+  border: 1px solid rgba(6, 214, 160, 0.2);
+}
+
+/* Reactions */
+.entry-reactions {
+  display: flex;
+  gap: 4px;
+  padding: 4px 14px 8px;
+  flex-wrap: wrap;
+}
+
+.reaction-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 100px;
+  padding: 5px 10px;
+  font-size: 15px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+  min-height: 34px;
+  -webkit-tap-highlight-color: transparent;
+  color: var(--text);
+}
+
+.reaction-btn span {
+  font-size: 12px;
+  color: var(--text2);
+  font-weight: 600;
+}
+
+.reaction-btn:active {
+  transform: scale(0.92);
+}
+
+.reaction-btn--active {
+  background: rgba(255, 77, 109, 0.12);
+  border-color: rgba(255, 77, 109, 0.4);
+}
+
+/* Comments */
+.entry-comments-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  background: transparent;
+  border: none;
+  border-top: 1px solid var(--border);
+  padding: 10px 14px;
+  font-size: 13px;
+  color: var(--text3);
+  cursor: pointer;
+  text-align: left;
+  min-height: 44px;
+  font-family: 'DM Sans', sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.entry-comments-toggle:active {
+  background: var(--bg3);
+}
+
+.entry-comments {
+  padding: 8px 14px 12px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.comment {
+  font-size: 13px;
+  color: var(--text2);
+  line-height: 1.4;
+}
+
+.comment strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.comment-form {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.comment-input {
+  flex: 1;
+  font-size: 14px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  min-width: 0;
+  height: 40px;
+}
+
+.comment-submit {
+  flex-shrink: 0;
+  background: var(--accent);
+  border: none;
+  color: #fff;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 0 14px;
+  border-radius: 10px;
+  cursor: pointer;
+  height: 40px;
+  min-width: 44px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.comment-submit:active {
+  opacity: 0.8;
+}
+
+/* ─── Leaflet ─────────────────────────────────────────────────────────────────── */
 .leaflet-container {
   height: 100%;
   width: 100%;
@@ -195,4 +656,33 @@ textarea::placeholder {
 .leaflet-top,
 .leaflet-bottom {
   z-index: 400;
+}
+
+/* Dark mode leaflet tiles tint */
+.leaflet-tile {
+  filter: brightness(0.85) saturate(0.8);
+}
+
+/* ─── Responsive tweaks ──────────────────────────────────────────────────────── */
+/* Larger phones — relax some constraints */
+@media (min-width: 390px) {
+  .capture-btn {
+    width: 42px;
+    height: 42px;
+    min-width: 42px;
+  }
+}
+
+/* Landscape — shrink capture bar */
+@media (orientation: landscape) and (max-height: 500px) {
+  .capture-bar {
+    padding: 6px 12px 8px;
+  }
+
+  .capture-btn {
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    font-size: 16px;
+  }
 }
