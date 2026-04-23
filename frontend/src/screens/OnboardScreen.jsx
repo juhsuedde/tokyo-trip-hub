@@ -12,8 +12,6 @@ export default function OnboardScreen({ user, onComplete, onLogout }) {
   const [loading, setLoading] = useState(false);
   const [showConfirmLeave, setShowConfirmLeave] = useState(null);
 
-  console.log('OnboardScreen render, showConfirmLeave:', showConfirmLeave);
-
   useEffect(() => {
     if (user) {
       loadTrips();
@@ -48,7 +46,6 @@ export default function OnboardScreen({ user, onComplete, onLogout }) {
   }
 
   async function confirmLeaveTrip(tripId) {
-    console.log('confirmLeaveTrip called with:', tripId);
     setShowConfirmLeave(tripId);
   }
 
@@ -76,13 +73,24 @@ export default function OnboardScreen({ user, onComplete, onLogout }) {
     return api.joinTrip(inviteCode.trim().toUpperCase());
   }
 
-  // Trips list screen
+  const inputStyle = { marginBottom: 12 };
+
+  // My Trips screen
   if (step === 'trips' || (step === 'start' && trips.length > 0)) {
     return (
       <div style={shell}>
+        {showConfirmLeave && (
+          <ConfirmModal
+            tripTitle={trips.find(t => t.id === showConfirmLeave)?.title}
+            onConfirm={executeLeaveTrip}
+            onCancel={() => setShowConfirmLeave(null)}
+          />
+        )}
+        
         <h2 className="syne" style={{ fontSize: 24, fontWeight: 700, marginBottom: 6 }}>
           My <span style={{ color: 'var(--accent)' }}>Trips</span>
         </h2>
+        
         <div style={{ marginBottom: 24 }}>
           {trips.map(trip => (
             <div key={trip.id} style={tripCard}>
@@ -99,7 +107,7 @@ export default function OnboardScreen({ user, onComplete, onLogout }) {
                 </div>
               </div>
               <button
-                onClick={(e) => { e.stopPropagation(); console.log('clicked x for', trip.id); confirmLeaveTrip(trip.id); }}
+                onClick={(e) => { e.stopPropagation(); confirmLeaveTrip(trip.id); }}
                 style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', padding: 8, fontSize: 18 }}
               >
                 ×
@@ -107,15 +115,10 @@ export default function OnboardScreen({ user, onComplete, onLogout }) {
             </div>
           ))}
         </div>
-        <button className="btn-ghost" onClick={onLogout} style={{ marginTop: 16 }}>
-          Logout
-        </button>
-        <button className="btn-primary" onClick={() => setStep('create')} style={{ marginBottom: 10 }}>
-          Create New Trip
-        </button>
-        <button className="btn-ghost" onClick={() => setStep('join')}>
-          Join with Code
-        </button>
+
+        <button className="btn-ghost" onClick={onLogout} style={{ marginTop: 16 }}>Logout</button>
+        <button className="btn-primary" onClick={() => setStep('create')} style={{ marginBottom: 10 }}>Create New Trip</button>
+        <button className="btn-ghost" onClick={() => setStep('join')}>Join with Code</button>
       </div>
     );
   }
@@ -129,24 +132,20 @@ export default function OnboardScreen({ user, onComplete, onLogout }) {
           <h1 className="syne" style={{ fontSize: 28, fontWeight: 800, letterSpacing: -1 }}>
             TokyoTrip<span style={{ color: 'var(--accent)' }}>Hub</span>
           </h1>
-          <p style={{ color: 'var(--text3)', marginTop: 6, fontSize: 13 }}>
-            Group travel · Capture · Remember
-          </p>
+          <p style={{ color: 'var(--text3)', marginTop: 6, fontSize: 13 }}>Group travel · Capture · Remember</p>
         </div>
+
         {user && (
           <p style={{ textAlign: 'center', color: 'var(--text2)', fontSize: 14, marginBottom: 24 }}>
             Welcome, <strong>{user.name}</strong>!
           </p>
         )}
+
         <button className="btn-primary" onClick={() => trips.length > 0 ? setStep('trips') : setStep('create')} style={{ marginBottom: 10 }}>
           {trips.length > 0 ? 'My Trips' : 'Create a Trip'}
         </button>
-        <button className="btn-ghost" onClick={() => setStep('join')}>
-          Join with Invite Code
-        </button>
-        <button className="btn-ghost" onClick={onLogout} style={{ marginTop: 16 }}>
-          Logout
-        </button>
+        <button className="btn-ghost" onClick={() => setStep('join')}>Join with Invite Code</button>
+        <button className="btn-ghost" onClick={onLogout} style={{ marginTop: 16 }}>Logout</button>
       </div>
     );
   }
@@ -162,14 +161,18 @@ export default function OnboardScreen({ user, onComplete, onLogout }) {
         <p style={{ color: 'var(--text3)', fontSize: 13, marginBottom: 24 }}>
           You'll get an invite code to share with your group.
         </p>
+
         <label style={labelStyle}>Trip name</label>
         <input value={tripTitle} onChange={e => setTripTitle(e.target.value)} placeholder="Tokyo Spring 2026" style={inputStyle} />
+
         <label style={labelStyle}>Dates (optional)</label>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
           <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} />
           <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} />
         </div>
+
         {error && <p style={errorStyle}>{error}</p>}
+
         <div style={{ marginTop: 'auto', paddingTop: 24 }}>
           <button className="btn-primary" onClick={() => handleTripAction(handleCreate)} disabled={loading}>
             {loading ? 'Creating...' : 'Create Trip & Get Invite Code'}
@@ -190,6 +193,7 @@ export default function OnboardScreen({ user, onComplete, onLogout }) {
         <p style={{ color: 'var(--text3)', fontSize: 13, marginBottom: 24 }}>
           Enter the 6-character invite code from your group.
         </p>
+
         <label style={labelStyle}>Invite code</label>
         <input
           value={inviteCode}
@@ -198,36 +202,15 @@ export default function OnboardScreen({ user, onComplete, onLogout }) {
           maxLength={6}
           style={{ ...inputStyle, textTransform: 'uppercase', letterSpacing: '0.2em', fontSize: 20, textAlign: 'center' }}
         />
+
         {error && <p style={errorStyle}>{error}</p>}
+
         <div style={{ marginTop: 'auto', paddingTop: 24 }}>
           <button className="btn-primary" onClick={() => handleTripAction(handleJoin)} disabled={loading}>
             {loading ? 'Joining...' : 'Join Trip'}
           </button>
         </div>
       </div>
-    );
-  }
-
-  // Confirm modal - overlay on top of everything
-  console.log('BEFORE FIND: trips length:', trips?.length, 'showConfirmLeave:', showConfirmLeave);
-  if (!trips || trips.length === 0) {
-    console.log('ERROR: trips is empty or null!');
-    return (
-      <>
-        <div style={shell}>
-          <h2>Error: No trips loaded</h2>
-          <button onClick={() => setShowConfirmLeave(null)}>Close</button>
-        </div>
-      </>
-    );
-  }
-  const confirmTrip = trips.find(t => t.id === showConfirmLeave);
-    return (
-      <ConfirmModal
-        tripTitle={confirmTrip?.title}
-        onConfirm={() => executeLeaveTrip()}
-        onCancel={() => setShowConfirmLeave(null)}
-      />
     );
   }
 
@@ -240,12 +223,8 @@ function ConfirmModal({ tripTitle, onConfirm, onCancel }) {
       <div style={modalContent}>
         <h3 style={{ marginBottom: 12, fontSize: 18 }}>Leave "{tripTitle}"?</h3>
         <p style={{ color: 'var(--text3)', marginBottom: 20, fontSize: 14 }}>You'll need a new invite code to rejoin this trip.</p>
-        <button onClick={onConfirm} className="btn-primary" style={{ width: '100%', marginBottom: 10 }}>
-          Leave Trip
-        </button>
-        <button onClick={onCancel} className="btn-ghost" style={{ width: '100%' }}>
-          Cancel
-        </button>
+        <button onClick={onConfirm} className="btn-primary" style={{ width: '100%', marginBottom: 10 }}>Leave Trip</button>
+        <button onClick={onCancel} className="btn-ghost" style={{ width: '100%' }}>Cancel</button>
       </div>
     </div>
   );
@@ -280,8 +259,6 @@ const backBtn = {
   marginBottom: 24,
   alignSelf: 'flex-start',
 };
-
-const inputStyle = { marginBottom: 12 };
 
 const errorStyle = {
   color: 'var(--accent)',
