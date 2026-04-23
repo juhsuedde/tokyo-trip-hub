@@ -126,14 +126,14 @@ export default function OnboardScreen({ user, onComplete, onLogout }) {
         <button className="btn-primary" onClick={() => setStep('create')} style={{ marginBottom: 10 }}>
           Create New Trip
         </button>
-        <button className="btn-ghost" onClick={() => setStep('join')}>
+<button className="btn-ghost" onClick={() => setStep('join')}>
           Join with Code
         </button>
       </div>
     );
   }
 
-  if (step === 'start') return (
+if (step === 'start') return (
     <div style={shell}>
       <div style={{ textAlign: 'center', marginBottom: 40 }}>
         <div style={{ fontSize: 56, marginBottom: 16 }}>🗾</div>
@@ -158,17 +158,21 @@ export default function OnboardScreen({ user, onComplete, onLogout }) {
         Join with Invite Code
       </button>
       <button className="btn-ghost" onClick={onLogout} style={{ marginTop: 16 }}>
-Logout
-        </button>
-        {showConfirmLeave && (
-          <ConfirmModal
-            tripTitle={trips.find(t => t.id === showConfirmLeave)?.title}
-            onConfirm={() => executeLeaveTrip()}
-            onCancel={() => setShowConfirmLeave(null)}
-          />
-        )}
-      </div>
+        Logout
+      </button>
+    </div>
+  );
+
+  // Confirm modal - show for any step
+  if (showConfirmLeave) {
+    return (
+      <ConfirmModal
+        tripTitle={trips.find(t => t.id === showConfirmLeave)?.title}
+        onConfirm={() => executeLeaveTrip()}
+        onCancel={() => setShowConfirmLeave(null)}
+      />
     );
+  }
   }
 
 const shell = {
