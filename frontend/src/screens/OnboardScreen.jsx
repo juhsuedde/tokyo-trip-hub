@@ -52,10 +52,13 @@ export default function OnboardScreen({ user, onComplete, onLogout }) {
   async function executeLeaveTrip() {
     try {
       await api.leaveTrip(showConfirmLeave);
+      // Success - close modal and reload
       setShowConfirmLeave(null);
       await loadTrips();
     } catch (err) {
+      // Show error but keep modal open so user can see it
       setError(err.message);
+      // Keep modal open to show error
     }
   }
 
@@ -83,7 +86,8 @@ export default function OnboardScreen({ user, onComplete, onLogout }) {
           <ConfirmModal
             tripTitle={trips.find(t => t.id === showConfirmLeave)?.title}
             onConfirm={executeLeaveTrip}
-            onCancel={() => setShowConfirmLeave(null)}
+            onCancel={() => { setShowConfirmLeave(null); setError(''); }}
+            error={error}
           />
         )}
         
@@ -217,11 +221,12 @@ export default function OnboardScreen({ user, onComplete, onLogout }) {
   return null;
 }
 
-function ConfirmModal({ tripTitle, onConfirm, onCancel }) {
+function ConfirmModal({ tripTitle, onConfirm, onCancel, error }) {
   return (
     <div style={modalOverlay}>
       <div style={modalContent}>
         <h3 style={{ marginBottom: 12, fontSize: 18 }}>Leave "{tripTitle}"?</h3>
+        {error && <p style={errorStyle}>{error}</p>}
         <p style={{ color: 'var(--text3)', marginBottom: 20, fontSize: 14 }}>You'll need a new invite code to rejoin this trip.</p>
         <button onClick={onConfirm} className="btn-primary" style={{ width: '100%', marginBottom: 10 }}>Leave Trip</button>
         <button onClick={onCancel} className="btn-ghost" style={{ width: '100%' }}>Cancel</button>
