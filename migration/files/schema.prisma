@@ -1,0 +1,165 @@
+// prisma/schema.prisma
+// Phase 4: User Accounts & SaaS
+// Adds User, TripMembership (role-based), and Subscription models
+// while preserving all Phase 1-3 models unchanged.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────
+// NEW in Phase 4
+// ─────────────────────────────────────────
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  avatarUrl    String?
+  preferences  Json     @default("{}")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  memberships  TripMembership[]
+  subscription Subscription?
+  entries      Entry[]
+}
+
+model TripMembership {
+  id        String   @id @default(cuid())
+  userId    String
+  tripId    String
+  role      Role     @default(EDITOR)
+  joinedAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  trip Trip @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tripId])
+  @@index([tripId])
+}
+
+enum Role {
+  OWNER
+  EDITOR
+  VIEWER
+}
+
+model Subscription {
+  id                   String             @id @default(cuid())
+  userId               String             @unique
+  tier                 SubscriptionTier   @default(FREE)
+  status               SubscriptionStatus @default(ACTIVE)
+  stripeCustomerId     String?            @unique
+  stripeSubscriptionId String?            @unique
+  currentPeriodEnd     DateTime?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+enum SubscriptionTier {
+  FREE
+  PREMIUM
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  TRIALING
+}
+
+// ─────────────────────────────────────────
+// EXISTING models (Phase 1-3) — updated
+// ─────────────────────────────────────────
+
+model Trip {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  inviteCode  String   @unique @default(cuid())
+  archived    Boolean  @default(false)
+  coverUrl    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  memberships TripMembership[]
+  entries     Entry[]
+}
+
+model Entry {
+  id          String      @id @default(cuid())
+  tripId      String
+  userId      String?     // nullable for backward compat with anonymous entries
+  type        EntryType
+  content     String?
+  mediaUrl    String?
+  thumbnailUrl String?
+  lat         Float?
+  lng         Float?
+  placeName   String?
+  category    String?
+  tags        String[]    @default([])
+  sentiment   String?
+  aiStatus    AiStatus    @default(PENDING)
+  aiRawResult Json?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  trip      Trip       @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  user      User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  reactions Reaction[]
+  comments  Comment[]
+
+  @@index([tripId, createdAt(sort: Desc)])
+}
+
+enum EntryType {
+  PHOTO
+  VOICE
+  TEXT
+  LOCATION
+}
+
+enum AiStatus {
+  PENDING
+  PROCESSING
+  DONE
+  FAILED
+}
+
+model Reaction {
+  id        String   @id @default(cuid())
+  entryId   String
+  userId    String?   // nullable for anonymous backward compat
+  deviceId  String?   // kept for backward compat
+  emoji     String
+  createdAt DateTime @default(now())
+
+  entry Entry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+
+  @@unique([entryId, userId, emoji])
+  @@index([entryId])
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  entryId   String
+  userId    String?
+  deviceId  String?
+  authorName String?
+  content   String
+  createdAt DateTime @default(now())
+
+  entry Entry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+
+  @@index([entryId])
+}

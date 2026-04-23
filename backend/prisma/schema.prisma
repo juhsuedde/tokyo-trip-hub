@@ -1,4 +1,6 @@
-// This is your Prisma schema file
+// Prisma schema - Phase 4: User Accounts & SaaS
+// Maintains backward compatibility with Phase 1-3
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -8,21 +10,32 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ─────────────────────────────────────────
+// User model - Extended for Phase 4
+// ─────────────────────────────────────────
 model User {
   id           String   @id @default(uuid())
+  email        String?  @unique  // NEW in Phase 4 - nullable for backward compat
+  passwordHash String?          // NEW - nullable for backward compat
   name         String
-  avatar       String?  // URL to avatar image
-  tempSession  String   @unique // localStorage session token
+  avatar       String?
+  tempSession  String?  @unique  // Phase 1-3 session token
+  preferences Json     @default("{}")
   createdAt    DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   memberships  TripMembership[]
   entries      Entry[]
-  reactions    Reaction[]
-  comments     Comment[]
+  reactions   Reaction[]
+  comments    Comment[]
+  subscription Subscription?
 
   @@map("users")
 }
 
+// ─────────────────────────────────────────
+// Trip - Extended for Phase 4
+// ─────────────────────────────────────────
 model Trip {
   id          String     @id @default(uuid())
   title       String
@@ -31,6 +44,8 @@ model Trip {
   endDate     DateTime?
   inviteCode  String     @unique
   status      TripStatus @default(ACTIVE)
+  archived    Boolean    @default(false)  // NEW in Phase 4
+  coverUrl    String?
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 
@@ -46,11 +61,14 @@ enum TripStatus {
   ARCHIVED
 }
 
+// ─────────────────────────────────────────
+// TripMembership - Extended for Phase 4
+// ─────────────────────────────────────────
 model TripMembership {
   id        String   @id @default(uuid())
   userId    String
   tripId    String
-  role      Role     @default(MEMBER)
+  role      Role     @default(EDITOR)  // Changed from MEMBER to EDITOR
   joinedAt  DateTime @default(now())
 
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -62,36 +80,69 @@ model TripMembership {
 
 enum Role {
   OWNER
-  MEMBER
+  EDITOR
+  VIEWER
 }
 
+// ─────────────────────────────────────────
+// Subscription - NEW in Phase 4
+// ─────────────────────────────────────────
+model Subscription {
+  id                   String             @id @default(uuid())
+  userId               String             @unique
+  tier                 SubscriptionTier   @default(FREE)
+  status               SubscriptionStatus @default(ACTIVE)
+  stripeCustomerId     String?            @unique
+  stripeSubscriptionId String?            @unique
+  currentPeriodEnd     DateTime?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+enum SubscriptionTier {
+  FREE
+  PREMIUM
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  TRIALING
+}
+
+// ─────────────────────────────────────────
+// Entry - Extended for Phase 4
+// ─────────────────────────────────────────
 model Entry {
   id            String      @id @default(uuid())
   tripId        String
   userId        String
   type          EntryType
-  // Content fields — populated depending on type
-  rawText       String?     // user's text note or voice transcription
-  contentUrl    String?     // photo/audio/video file URL
-  transcription String?     // Whisper transcription (Phase 2)
-  ocrText       String?     // GPT-4V OCR result (Phase 2)
+  // Content fields
+  rawText       String?
+  contentUrl    String?
+  transcription String?
+  ocrText       String?
   // Location
   latitude      Float?
   longitude     Float?
   address       String?
-  // AI-generated metadata (Phase 2 — columns present now, populated later)
+  // AI metadata
   category      Category?
-  sentiment     Sentiment?
-  tags          String[]    @default([])
+  sentiment    Sentiment?
+  tags         String[]    @default([])
   // Timestamps
-  capturedAt    DateTime    @default(now()) // when user captured it (may differ from createdAt if offline)
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
+  capturedAt   DateTime    @default(now())
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
 
-  trip          Trip        @relation(fields: [tripId], references: [id], onDelete: Cascade)
-  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  reactions     Reaction[]
-  comments      Comment[]
+  trip         Trip        @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reactions    Reaction[]
+  comments     Comment[]
 
   @@index([tripId, createdAt(sort: Desc)])
   @@map("entries")
@@ -121,6 +172,9 @@ enum Sentiment {
   NEGATIVE
 }
 
+// ─────────────────────────────────────────
+// Reaction
+// ─────────────────────────────────────────
 model Reaction {
   id        String   @id @default(uuid())
   entryId   String
@@ -128,13 +182,16 @@ model Reaction {
   emoji     String
   createdAt DateTime @default(now())
 
-  entry     Entry    @relation(fields: [entryId], references: [id], onDelete: Cascade)
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  entry     Entry   @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([entryId, userId, emoji]) // one of each emoji per user per entry
+  @@unique([entryId, userId, emoji])
   @@map("reactions")
 }
 
+// ─────────────────────────────────────────
+// Comment
+// ─────────────────────────────────────────
 model Comment {
   id        String   @id @default(uuid())
   entryId   String
@@ -143,8 +200,8 @@ model Comment {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  entry     Entry    @relation(fields: [entryId], references: [id], onDelete: Cascade)
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  entry     Entry   @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([entryId, createdAt])
   @@map("comments")
