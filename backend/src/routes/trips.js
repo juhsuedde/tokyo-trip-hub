@@ -38,6 +38,37 @@ function generateInviteCode() {
 }
 
 /**
+ * GET /api/trips
+ * List user's trips
+ */
+router.get('/', requireUser, async (req, res, next) => {
+  try {
+    const trips = await prisma.trip.findMany({
+      where: {
+        memberships: {
+          some: { userId: req.user.id }
+        }
+      },
+      select: {
+        id: true,
+        title: true,
+        destination: true,
+        startDate: true,
+        endDate: true,
+        inviteCode: true,
+        status: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    res.json({ trips });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
  * POST /api/trips
  * Create a new trip. The creator becomes the OWNER.
  * Body: { title, destination?, startDate?, endDate? }
@@ -228,6 +259,42 @@ router.get('/:id/members', requireUser, async (req, res, next) => {
       orderBy: { joinedAt: 'asc' },
     });
     res.json({ members });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * DELETE /api/trips/:id/leave
+ * Leave a trip (remove membership)
+ */
+router.delete('/:id/leave', requireUser, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    
+    // Can't leave if you're the only owner
+    const membership = await prisma.tripMembership.findUnique({
+      where: { userId_tripId: { userId: req.user.id, tripId: id } },
+    });
+    
+    if (!membership) {
+      return res.status(404).json({ error: 'Not a member of this trip' });
+    }
+    
+    if (membership.role === 'OWNER') {
+      const otherOwners = await prisma.tripMembership.count({
+        where: { tripId: id, role: 'OWNER', userId: { not: req.user.id } },
+      });
+      if (otherOwners === 0) {
+        return res.status(400).json({ error: 'Cannot leave as the only owner. Transfer ownership first.' });
+      }
+    }
+    
+    await prisma.tripMembership.delete({
+      where: { userId_tripId: { userId: req.user.id, tripId: id } },
+    });
+    
+    res.json({ ok: true });
   } catch (err) {
     next(err);
   }

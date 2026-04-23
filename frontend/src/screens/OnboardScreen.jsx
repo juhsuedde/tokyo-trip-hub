@@ -1,15 +1,30 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { api } from '../lib/api.js';
 
-export default function OnboardScreen({ user, onComplete }) {
-  const [step, setStep] = useState('start'); // start | create | join
-  const [hasAccount, setHasAccount] = useState(!!user);
+export default function OnboardScreen({ user, onComplete, onLogout }) {
+  const [step, setStep] = useState('start'); // start | create | join | trips
+  const [trips, setTrips] = useState([]);
   const [tripTitle, setTripTitle] = useState('Tokyo Spring 2026');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [inviteCode, setInviteCode] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (user) {
+      loadTrips();
+    }
+  }, []);
+
+  async function loadTrips() {
+    try {
+      const { trips } = await api.getTrips();
+      setTrips(trips || []);
+    } catch (err) {
+      console.error('Failed to load trips:', err);
+    }
+  }
 
   async function handleTripAction(fn) {
     setError('');
@@ -21,6 +36,20 @@ export default function OnboardScreen({ user, onComplete }) {
       setError(err.message);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleSelectTrip(trip) {
+    onComplete(user, trip);
+  }
+
+  async function handleLeaveTrip(tripId) {
+    if (!confirm('Leave this trip?')) return;
+    try {
+      await api.leaveTrip(tripId);
+      setTrips(trips.filter(t => t.id !== tripId));
+    } catch (err) {
+      setError(err.message);
     }
   }
 
@@ -40,6 +69,50 @@ export default function OnboardScreen({ user, onComplete }) {
 
   const inputStyle = { marginBottom: 12 };
 
+  // Show user's trips
+  if (step === 'trips' || (step === 'start' && trips.length > 0)) {
+    return (
+      <div style={shell}>
+        <button onClick={() => setStep('start')} style={backBtn}>←</button>
+        <h2 className="syne" style={{ fontSize: 24, fontWeight: 700, marginBottom: 6 }}>
+          My <span style={{ color: 'var(--accent)' }}>Trips</span>
+        </h2>
+        
+        <div style={{ marginBottom: 24 }}>
+          {trips.map(trip => (
+            <div key={trip.id} style={tripCard}>
+              <div onClick={() => handleSelectTrip(trip)} style={{ flex: 1 }}>
+                <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 4 }}>
+                  {trip.title}
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 4 }}>
+                  {trip.startDate ? new Date(trip.startDate).toLocaleDateString() : 'No date'}
+                  {trip.endDate && ` - ${new Date(trip.endDate).toLocaleDateString()}`}
+                </div>
+                <div style={{ fontSize: 13, color: 'var(--accent)' }}>
+                  Code: <strong>{trip.inviteCode}</strong>
+                </div>
+              </div>
+              <button
+                onClick={(e) => { e.stopPropagation(); handleLeaveTrip(trip.id); }}
+                style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', padding: 8, fontSize: 18 }}
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+
+        <button className="btn-primary" onClick={() => setStep('create')} style={{ marginBottom: 10 }}>
+          Create New Trip
+        </button>
+        <button className="btn-ghost" onClick={() => setStep('join')}>
+          Join with Code
+        </button>
+      </div>
+    );
+  }
+
   if (step === 'start') return (
     <div style={shell}>
       <div style={{ textAlign: 'center', marginBottom: 40 }}>
@@ -58,16 +131,15 @@ export default function OnboardScreen({ user, onComplete }) {
         </p>
       )}
 
-      <button className="btn-primary" onClick={() => setStep('create')} style={{ marginBottom: 10 }}>
-        Create a Trip
+      <button className="btn-primary" onClick={() => trips.length > 0 ? setStep('trips') : setStep('create')} style={{ marginBottom: 10 }}>
+        {trips.length > 0 ? 'My Trips' : 'Create a Trip'}
       </button>
       <button className="btn-ghost" onClick={() => setStep('join')}>
         Join with Invite Code
       </button>
-
-      <p style={{ textAlign: 'center', color: 'var(--text3)', fontSize: 12, marginTop: 20 }}>
-        {user ? 'Create or join a trip to get started' : 'No account needed · Works offline'}
-      </p>
+      <button className="btn-ghost" onClick={onLogout} style={{ marginTop: 16 }}>
+        Logout
+      </button>
     </div>
   );
 
@@ -164,4 +236,14 @@ const errorStyle = {
   padding: '10px 14px',
   background: 'rgba(255,77,109,0.1)',
   borderRadius: 10,
+};
+const tripCard = {
+  display: 'flex',
+  alignItems: 'center',
+  padding: 16,
+  background: 'var(--bg2)',
+  borderRadius: 12,
+  border: '1px solid var(--border)',
+  marginBottom: 12,
+  cursor: 'pointer',
 };

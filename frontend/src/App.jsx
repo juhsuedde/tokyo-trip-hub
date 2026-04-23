@@ -48,6 +48,13 @@ export default function App() {
     setTrip(trip);
   };
 
+  const handleLogout = () => {
+    localStorage.removeItem('sessionToken');
+    localStorage.removeItem('currentTrip');
+    setUser(null);
+    setTrip(null);
+  };
+
    const handleLeaveTrip = () => {
      localStorage.removeItem('currentTrip');
      setTrip(null);
@@ -69,7 +76,7 @@ export default function App() {
 
   // Logged in but no trip → Onboard (pass logged-in user)
   if (!trip) {
-    return <OnboardScreen user={user} onComplete={handleOnboarded} />;
+    return <OnboardScreen user={user} onComplete={handleOnboarded} onLogout={handleLogout} />;
   }
 
 return (

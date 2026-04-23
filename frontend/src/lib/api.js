@@ -79,9 +79,13 @@ export const api = {
     const res = await request('GET', '/auth/me');
     return res.user || res;
   },
-  createTrip:      (data) => request('POST', '/trips', data),
-  joinTrip:        (code) => request('POST', `/trips/${code}/join`),
-  getTrip:         (id) => request('GET', `/trips/${id}`),
+
+  // Trips
+  getTrips: () => request('GET', '/trips'),
+  createTrip: (data) => request('POST', '/trips', data),
+  joinTrip: (code) => request('POST', `/trips/${code}/join`),
+  getTrip: (id) => request('GET', `/trips/${id}`),
+  leaveTrip: (id) => request('DELETE', `/trips/${id}/leave`),
   getFeed:         (tripId, cursor) =>
     request('GET', `/trips/${tripId}/feed${cursor ? `?cursor=${cursor}` : ''}`),
   getMembers:      (tripId) => request('GET', `/trips/${tripId}/members`),
