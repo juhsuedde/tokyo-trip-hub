@@ -104,6 +104,10 @@ export default function OnboardScreen({ user, onComplete, onLogout }) {
           ))}
         </div>
 
+        <button className="btn-ghost" onClick={onLogout} style={{ marginTop: 16 }}>
+          Logout
+        </button>
+
         <button className="btn-primary" onClick={() => setStep('create')} style={{ marginBottom: 10 }}>
           Create New Trip
         </button>
