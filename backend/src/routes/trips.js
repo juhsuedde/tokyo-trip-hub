@@ -294,10 +294,41 @@ router.delete('/:id/leave', requireUser, async (req, res, next) => {
       where: { userId_tripId: { userId: req.user.id, tripId: id } },
     });
     
-    res.json({ ok: true });
-  } catch (err) {
-    next(err);
+    // DELETE /api/trips/:id - Delete entire trip (owner only)
+router.delete('/:id', requireUser, async (req, res, next) => {
+  const { id } = req.params;
+  
+  const membership = await prisma.tripMembership.findUnique({
+    where: { userId_tripId: { userId: req.user.id, tripId: id } },
+  });
+  
+  if (!membership) {
+    return res.status(404).json({ error: 'Not a member of this trip' });
   }
+  
+  if (membership.role !== 'OWNER') {
+    // Member - just leave
+    await prisma.tripMembership.delete({
+      where: { userId_tripId: { userId: req.user.id, tripId: id } },
+    });
+  } else {
+    // Owner - check if other owners exist
+    const otherOwners = await prisma.tripMembership.count({
+      where: { tripId: id, role: 'OWNER', userId: { not: req.user.id } },
+    });
+    
+    if (otherOwners > 0) {
+      // Other owners - just leave the group
+      await prisma.tripMembership.delete({
+        where: { userId_tripId: { userId: req.user.id, tripId: id } },
+      });
+    } else {
+      // Only owner - delete entire trip
+      await prisma.trip.delete({ where: { id } });
+    }
+  }
+  
+  res.json({ ok: true });
 });
 
 module.exports = router;

@@ -11,6 +11,7 @@ export default function OnboardScreen({ user, onComplete, onLogout }) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [showConfirmLeave, setShowConfirmLeave] = useState(null);
+  const [confirmLeaveType, setConfirmLeaveType] = useState('leave'); // 'leave' or 'delete'
 
   useEffect(() => {
     if (user) {
@@ -46,19 +47,33 @@ export default function OnboardScreen({ user, onComplete, onLogout }) {
   }
 
   async function confirmLeaveTrip(tripId) {
-    setShowConfirmLeave(tripId);
+    // Check if user is the only owner by getting trip members
+    try {
+      const { members } = await api.getTripMembers(tripId);
+      const isOwner = members.some(m => m.role === 'OWNER' && m.userId === user.id);
+      const ownerCount = members.filter(m => m.role === 'OWNER').length;
+      
+      setShowConfirmLeave(tripId);
+      setConfirmLeaveType(ownerCount > 1 ? 'leave' : 'delete');
+    } catch (err) {
+      // Default to leave if can't check
+      setShowConfirmLeave(tripId);
+      setConfirmLeaveType('leave');
+    }
   }
 
   async function executeLeaveTrip() {
     try {
-      await api.leaveTrip(showConfirmLeave);
-      // Success - close modal and reload
+      if (confirmLeaveType === 'delete') {
+        await api.deleteTrip(showConfirmLeave);
+      } else {
+        await api.leaveTrip(showConfirmLeave);
+      }
       setShowConfirmLeave(null);
+      setConfirmLeaveType('leave');
       await loadTrips();
     } catch (err) {
-      // Show error but keep modal open so user can see it
       setError(err.message);
-      // Keep modal open to show error
     }
   }
 
@@ -84,9 +99,10 @@ export default function OnboardScreen({ user, onComplete, onLogout }) {
       <div style={shell}>
         {showConfirmLeave && (
           <ConfirmModal
+            type={confirmLeaveType}
             tripTitle={trips.find(t => t.id === showConfirmLeave)?.title}
             onConfirm={executeLeaveTrip}
-            onCancel={() => { setShowConfirmLeave(null); setError(''); }}
+            onCancel={() => { setShowConfirmLeave(null); setError(''); setConfirmLeaveType('leave'); }}
             error={error}
           />
         )}
@@ -221,14 +237,24 @@ export default function OnboardScreen({ user, onComplete, onLogout }) {
   return null;
 }
 
-function ConfirmModal({ tripTitle, onConfirm, onCancel, error }) {
+function ConfirmModal({ type, tripTitle, onConfirm, onCancel, error }) {
+  const isDelete = type === 'delete';
   return (
     <div style={modalOverlay}>
       <div style={modalContent}>
-        <h3 style={{ marginBottom: 12, fontSize: 18 }}>Leave "{tripTitle}"?</h3>
+        <h3 style={{ marginBottom: 12, fontSize: 18 }}>
+          {isDelete ? 'Delete Trip?' : `Leave "${tripTitle}"?`}
+        </h3>
         {error && <p style={errorStyle}>{error}</p>}
-        <p style={{ color: 'var(--text3)', marginBottom: 20, fontSize: 14 }}>You'll need a new invite code to rejoin this trip.</p>
-        <button onClick={onConfirm} className="btn-primary" style={{ width: '100%', marginBottom: 10 }}>Leave Trip</button>
+        <p style={{ color: 'var(--text3)', marginBottom: 20, fontSize: 14 }}>
+          {isDelete 
+            ? 'This will delete the trip for everyone. All entries will be lost.'
+            : "You'll need a new invite code to rejoin this trip."
+          }
+        </p>
+        <button onClick={onConfirm} className="btn-primary" style={{ width: '100%', marginBottom: 10 }}>
+          {isDelete ? 'Delete Trip' : 'Leave Trip'}
+        </button>
         <button onClick={onCancel} className="btn-ghost" style={{ width: '100%' }}>Cancel</button>
       </div>
     </div>
