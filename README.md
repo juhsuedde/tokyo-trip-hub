@@ -19,7 +19,7 @@ O TokyoTrip Hub é um **diário de viagem colaborativo sem fricção**, projetad
 - 👥 **Colaboração em tempo real** — 4 viajantes contribuindo simultaneamente para o mesmo feed de viagem
 - 🧠 **Organização automática por IA** — Whisper transcreve áudio, GPT-4V extrai texto de fotos, auto-categoriza e etiqueta tudo
 - 📡 **Offline-first** — funciona nos túneis do metrô de Tóquio; sincroniza quando o WiFi volta
-- 📖 **Exporte para publicar** — gere e-books, guias em PDF ou posts de blog a partir dos dados estruturados da viagem _(Phase 3)_
+- 📖 **Exporte para publicar** — gere e-books, guias em PDF ou posts de blog a partir dos dados estruturados da viagem _(Phase 3 ✅)_
 
 Construído como um **projeto de portfólio de nível produção** com potencial claro de monetização como SaaS.
 
@@ -234,12 +234,13 @@ VITE_API_URL=http://localhost:3001
 - [x] Endpoint de status de processamento da IA
 - [x] Modo MOCK_AI para desenvolvimento sem custos
 
-### Phase 3 🔄 — Publicação
+### Phase 3 ✅ — Publicação
 
-- [ ] Motor de exportação (Puppeteer → PDF/EPUB)
-- [ ] Templates de e-book e guia publicável
-- [ ] Visualização de mapa com todas as entradas
-- [ ] Extração de custos de recibos
+- [x] Motor de exportação (Puppeteer → PDF/EPUB)
+- [x] Templates de e-book e guia publicável
+- [x] Visualização de mapa com todas as entradas
+- [x] Extração de custos de recibos
+- [x] **UI mobile-first com dark mode** (Phase 3.5 - Polimento para Viagem)
 
 ### Phase 4 🚀 — SaaS
 
