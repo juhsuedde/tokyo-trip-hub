@@ -106,102 +106,49 @@ export default function FeedScreen({ user, trip }) {
   const avatarColors = ['#ff4d6d', '#ffd166', '#06d6a0', '#a78bfa', '#60a5fa'];
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      {/* Header — top padding accounts for status bar on iPhone */}
-      <div style={{
-        padding: 'calc(env(safe-area-inset-top, 12px) + 12px) 20px 12px',
-        borderBottom: '1px solid var(--border)',
-        flexShrink: 0,
-        background: 'var(--bg)',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+    <div className="feed-screen">
+      {/* Header */}
+      <div className="feed-header">
+        <div className="feed-header-content">
           <div>
-            <h1 className="syne" style={{ fontSize: 18, fontWeight: 700, lineHeight: 1.2 }}>
-              {trip.title}
-            </h1>
-            <p style={{ fontSize: 12, color: 'var(--text3)', marginTop: 2 }}>
-              {trip.destination}
-            </p>
+            <h1 className="syne feed-title">{trip.title}</h1>
+            <p className="feed-dest">{trip.destination}</p>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            {/* Sync pill */}
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 5,
-              background: 'var(--bg3)', borderRadius: 100,
-              padding: '5px 10px', fontSize: 11, color: 'var(--accent3)',
-            }}>
-              <div style={{
-                width: 6, height: 6, borderRadius: '50%',
-                background: 'var(--accent3)',
-                animation: 'pulse 2s infinite',
-              }} />
-              Live
+          <div className="feed-header-right">
+            <div className="live-pill">
+              <span className="live-dot" /> Live
             </div>
-            {/* Members avatars */}
-            <div style={{ display: 'flex' }}>
+            <div className="members-row">
               {members.slice(0, 4).map((m, i) => (
-                <div key={m.user?.id || i} style={{
-                  width: 28, height: 28, borderRadius: '50%',
-                  background: avatarColors[i % avatarColors.length],
-                  border: '2px solid var(--bg)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 10, fontWeight: 500,
-                  color: i === 1 || i === 2 ? '#000' : '#fff',
-                  marginLeft: i > 0 ? -8 : 0,
-                  zIndex: members.length - i,
-                  position: 'relative',
-                  cursor: 'pointer',
-                }} onClick={() => setShowInvite(true)}>
+                <div key={m.user?.id || i} className="member-avatar" style={{ background: avatarColors[i % avatarColors.length] }} onClick={() => setShowInvite(true)}>
                   {(m.user?.name || '?').charAt(0).toUpperCase()}
                 </div>
               ))}
-              {/* + invite button */}
-              <div style={{
-                width: 28, height: 28, borderRadius: '50%',
-                background: 'var(--bg3)', border: '2px solid var(--border)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 14, color: 'var(--text3)', cursor: 'pointer',
-                marginLeft: -8,
-              }} onClick={() => setShowInvite(true)}>+</div>
+              <div className="member-avatar invite-btn" onClick={() => setShowInvite(true)}>+</div>
             </div>
           </div>
         </div>
       </div>
 
       {/* Feed */}
-      <div
-        ref={feedRef}
-        onScroll={handleScroll}
-        style={{ flex: 1, overflowY: 'auto', padding: '12px 16px calc(var(--tab-bar-total) + 72px)', display: 'flex', flexDirection: 'column', gap: 12 }}
-      >
+      <div ref={feedRef} className="feed-list" onScroll={handleScroll}>
         {loading ? (
           Array.from({ length: 3 }).map((_, i) => <SkeletonCard key={i} />)
         ) : entries.length === 0 ? (
           <EmptyFeed />
         ) : (
           entries.map(entry => (
-            <EntryCard
-              key={entry.id}
-              entry={entry}
-              currentUser={user}
-              onReaction={handleReaction}
-            />
+            <EntryCard key={entry.id} entry={entry} currentUser={user} onReaction={handleReaction} />
           ))
         )}
-        {loadingMore && (
-          <div style={{ display: 'flex', justifyContent: 'center', padding: 16 }}>
-            <div className="spinner" />
-          </div>
-        )}
+        {loadingMore && <div className="loading-more"><div className="spinner" /></div>}
       </div>
 
-       {/* Capture bar */}
-       <CaptureBar tripId={trip.id} onEntryCreated={handleEntryCreated} />
+      {/* Capture bar */}
+      <CaptureBar tripId={trip.id} onEntryCreated={handleEntryCreated} />
 
       {/* Invite modal */}
-      {showInvite && (
-        <InviteModal trip={trip} members={members} onClose={() => setShowInvite(false)} />
-      )}
+      {showInvite && <InviteModal trip={trip} members={members} onClose={() => setShowInvite(false)} />}
     </div>
   );
 }

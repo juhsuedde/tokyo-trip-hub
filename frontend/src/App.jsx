@@ -58,21 +58,21 @@ export default function App() {
     return <OnboardScreen onComplete={handleOnboarded} />;
   }
 
-  return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--bg)', position: 'relative' }}>
-       {/* Screen content */}
-        <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
-          {activeTab === 'feed' && <FeedScreen user={user} trip={trip} />}
-           {activeTab === 'map'  && <MapScreen  tripId={trip.id} />}
-          {showExport && <ExportModal tripId={trip.id} onClose={() => setShowExport(false)} />}
-        </div>
+return (
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--bg)' }}>
+      {/* Screen content */}
+      <div style={{ flex: 1, minHeight: 0 }}>
+        {activeTab === 'feed' && <FeedScreen user={user} trip={trip} />}
+        {activeTab === 'map' && <MapScreen tripId={trip.id} />}
+        {showExport && <ExportModal tripId={trip.id} onClose={() => setShowExport(false)} />}
+      </div>
 
-       {/* Tab bar */}
-       <div className="tab-bar">
-         <button onClick={() => setActiveTab('feed')} className={activeTab === 'feed' ? 'active' : ''}>Feed</button>
-         <button onClick={() => setActiveTab('map')} className={activeTab === 'map' ? 'active' : ''}>Map</button>
-         <button onClick={() => setShowExport(true)}>📖 Export</button>
-       </div>
+      {/* Tab bar */}
+      <div className="tab-bar">
+        <button onClick={() => setActiveTab('feed')} className={activeTab === 'feed' ? 'active' : ''}>Feed</button>
+        <button onClick={() => setActiveTab('map')} className={activeTab === 'map' ? 'active' : ''}>Map</button>
+        <button onClick={() => setShowExport(true)}>📖 Export</button>
+      </div>
     </div>
   );
 }

@@ -27,9 +27,14 @@ async function request(method, path, body, isFormData = false) {
     headers,
     body: isFormData ? body : body ? JSON.stringify(body) : undefined,
   });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-  return data;
+  
+  const text = await res.text();
+  if (!res.ok) {
+    const data = text ? JSON.parse(text) : {};
+    throw new Error(data.error || `HTTP ${res.status}`);
+  }
+  
+  return text ? JSON.parse(text) : {};
 }
 
 async function requestWithOfflineFallback(tripId, formDataOrBody, isFormData) {

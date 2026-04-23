@@ -11,6 +11,7 @@ import { api } from '../lib/api';
  */
 export default function EntryCard({ entry: initialEntry, currentUserId, socket, onDelete }) {
   const [entry, setEntry] = useState(initialEntry);
+
   const [processing, setProcessing] = useState(
     (initialEntry.type === 'VOICE' && !initialEntry.transcription) ||
     (initialEntry.type === 'PHOTO' && !initialEntry.ocrText && !initialEntry.category)
