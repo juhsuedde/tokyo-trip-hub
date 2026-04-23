@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { api } from '../lib/api';
+import { api, request } from '../lib/api';
 
 export default function AuthScreen({ onLogin }) {
   const [isLogin, setIsLogin] = useState(true);
@@ -15,23 +15,13 @@ export default function AuthScreen({ onLogin }) {
     setLoading(true);
 
     try {
-      const endpoint = isLogin ? '/api/auth/login' : '/api/auth/register';
-      const body = isLogin 
-        ? { email, password }
-        : { email, password, name };
-
-      const res = await fetch(`http://localhost:3001${endpoint}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-
-      const data = await res.json();
-      
-      if (!res.ok) {
-        throw new Error(data.error || 'Authentication failed');
+      let data;
+      if (isLogin) {
+        data = await api.login(email, password);
+      } else {
+        data = await api.register(email, password, name);
       }
-
+      
       localStorage.setItem('sessionToken', data.token);
       onLogin(data.user, data.token);
     } catch (err) {

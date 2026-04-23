@@ -68,7 +68,7 @@ if (typeof window !== 'undefined') {
   window.addEventListener('online', () => syncOfflineEntries());
 }
 
-export { syncOfflineEntries };
+export { syncOfflineEntries, request };
 
 export const api = {
   // Auth

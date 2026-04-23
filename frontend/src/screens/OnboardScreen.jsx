@@ -31,6 +31,7 @@ export default function OnboardScreen({ user, onComplete, onLogout }) {
     setLoading(true);
     try {
       const result = await fn();
+      await loadTrips(); // Reload trips after create/join
       onComplete(user, result.trip);
     } catch (err) {
       setError(err.message);
