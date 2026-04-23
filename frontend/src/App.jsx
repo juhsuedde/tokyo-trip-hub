@@ -61,11 +61,11 @@ export default function App() {
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--bg)', position: 'relative' }}>
        {/* Screen content */}
-       <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
-         {activeTab === 'feed' && <FeedScreen user={user} trip={trip} />}
-         {activeTab === 'map'  && <MapScreen  user={user} trip={trip} />}
-         {showExport && <ExportModal tripId={trip.id} onClose={() => setShowExport(false)} />}
-       </div>
+        <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
+          {activeTab === 'feed' && <FeedScreen user={user} trip={trip} />}
+           {activeTab === 'map'  && <MapScreen  tripId={trip.id} />}
+          {showExport && <ExportModal tripId={trip.id} onClose={() => setShowExport(false)} />}
+        </div>
 
        {/* Tab bar */}
        <div className="tab-bar">

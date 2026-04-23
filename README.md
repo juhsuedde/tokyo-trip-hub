@@ -13,7 +13,7 @@
 
 ## ✨ O que faz
 
-O TokyoTrip Hub é um **diário de viagem colaborativo sem fricção**, projetado para uso no mundo real durante viagens:
+O TokyoTrip Hub é um **diário de viagem colaborativo sem fricção**, projetado para uso no mundo real durante viagens — mas com um propósito maior do que apenas lembranças pessoais.
 
 - 📸 **Capture primeiro, organize depois** — tire fotos, grave memos de voz, salve locais, escreva notas rápidas
 - 👥 **Colaboração em tempo real** — 4 viajantes contribuindo simultaneamente para o mesmo feed de viagem
@@ -22,6 +22,14 @@ O TokyoTrip Hub é um **diário de viagem colaborativo sem fricção**, projetad
 - 📖 **Exporte para publicar** — gere e-books, guias em PDF ou posts de blog a partir dos dados estruturados da viagem _(Phase 3)_
 
 Construído como um **projeto de portfólio de nível produção** com potencial claro de monetização como SaaS.
+
+---
+
+## 💡 Filosofia
+
+**Capture-first, organize-later**: A experiência do usuário durante a viagem deve ser tão rápida quanto tirar uma foto ou gravar um memo de voz. Toda a organização acontece automaticamente via IA — durante ou após a viagem.
+
+O objetivo final não é apenas um e-book de lembrança para quem viajou, e sim um **guia publicável e reutilizável**: a IA categoriza, etiqueta e estrutura tudo que for enviado, transformando experiências pessoais em conteúdo de valor para outros viajantes.
 
 ---
 
@@ -229,7 +237,7 @@ VITE_API_URL=http://localhost:3001
 ### Phase 3 🔄 — Publicação
 
 - [ ] Motor de exportação (Puppeteer → PDF/EPUB)
-- [ ] Templates de e-book
+- [ ] Templates de e-book e guia publicável
 - [ ] Visualização de mapa com todas as entradas
 - [ ] Extração de custos de recibos
 

@@ -74,8 +74,8 @@ export default function TripScreen({ trip, socket, user }) {
 
       {/* Main content area */}
       <div style={{ flex: 1, overflow: 'hidden' }}>
-        {activeTab === 'feed' && <FeedScreen tripId={trip.id} socket={socket} user={user} />}
-        {activeTab === 'map'  && <MapScreen  tripId={trip.id} user={user} />}
+        {activeTab === 'feed' && <FeedScreen trip={trip} socket={socket} user={user} />}
+        {activeTab === 'map'  && <MapScreen  tripId={trip.id} />}
       </div>
 
       {/* ExportModal */}
