@@ -6,6 +6,7 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
+const cookieParser = require('cookie-parser');
 const fileUpload = require('express-fileupload');
 const path = require('path');
 const fs = require('fs');
@@ -19,10 +20,13 @@ const ALLOWED_ORIGINS = [
 const { prisma } = require('./lib/prisma');
 const { redisClient } = require('./lib/redis');
 const { sessionMiddleware } = require('./middleware/session');
+const { optionalAuth } = require('./middleware/auth');
+const { enforceExportFormat } = require('./middleware/subscription');
 const tripsRouter = require('./routes/trips');
 const entriesRouter = require('./routes/entries');
 const usersRouter = require('./routes/users');
 const exportRouter = require('./routes/export');
+const authRouter = require('./routes/auth');
 
 // Register Bull queue workers
 require('./queues/aiQueue');
@@ -61,6 +65,7 @@ app.use(cors({
 }));
 
 app.use(express.json({ limit: '50mb' }));
+app.use(cookieParser());
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 const uploadDir = process.env.UPLOAD_DIR || path.join(__dirname, '..', 'uploads');
@@ -77,11 +82,15 @@ app.use(fileUpload({
 
 app.use('/uploads', express.static(uploadDir));
 
-app.use(sessionMiddleware);
+// Token auth middleware
+app.use(optionalAuth);
+
+// API Routes
+app.use('/api/auth', authRouter);
 app.use('/api/trips', tripsRouter);
 app.use('/api/entries', entriesRouter);
 app.use('/api/users', usersRouter);
-app.use('/api/export', exportRouter);
+app.use('/api/export', enforceExportFormat, exportRouter);
 // Export trigger also lives under trips namespace
 app.use('/api', exportRouter);
 
