@@ -1,6 +1,6 @@
 # TokyoTrip Hub 🗼
 
-> Um PWA colaborativo de inteligência de viagem, construído para capturar, organizar e publicar experiências de viagem — começando pela primavera de Tóquio 2026.
+> Um PWA colaborativo de inteligência de viagem, construído para capturar, organizar e publicar experiências de viagem.
 
 [![Docker](https://img.shields.io/badge/Docker-Compose-blue?logo=docker)](https://docker.com)
 [![React](https://img.shields.io/badge/Frontend-React_18-61DAFB?logo=react)](https://react.dev)
