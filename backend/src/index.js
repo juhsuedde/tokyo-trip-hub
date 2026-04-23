@@ -1,84 +1,106 @@
-// backend/src/index.js  (Phase 4 — diff from Phase 3)
-// Changes:
-//   1. Mount /api/auth router
-//   2. Add cookie-parser (for httpOnly cookie fallback)
-//   3. Apply optionalAuth globally so req.user is available everywhere
-//   4. Update /api/trips and /api/entries to require auth via their own routers
-//
-// Everything below the "── UNCHANGED FROM PHASE 3 ──" marker is identical
-// to the existing index.js — only the additions are shown. Merge carefully.
+/**
+ * backend/src/index.js  (Phase 3 — adds export routes + queue)
+ */
+require('dotenv').config();
+const express = require('express');
+const http = require('http');
+const { Server } = require('socket.io');
+const cors = require('cors');
+const fileUpload = require('express-fileupload');
+const path = require('path');
+const fs = require('fs');
 
-import express from 'express';
-import http from 'http';
-import { Server as SocketIO } from 'socket.io';
-import cors from 'cors';
-import cookieParser from 'cookie-parser';            // NEW Phase 4
+const ALLOWED_ORIGINS = [
+  'http://localhost:5173',
+  'http://192.168.0.245:5173',
+  'http://127.0.0.1:5173',
+];
 
-// Existing routers
-import tripsRouter from './routes/trips.js';         // REPLACED in Phase 4
-import entriesRouter from './routes/entries.js';     // UNCHANGED
-import exportRouter from './routes/export.js';       // UNCHANGED
+const { prisma } = require('./lib/prisma');
+const { redisClient } = require('./lib/redis');
+const { sessionMiddleware } = require('./middleware/session');
+const tripsRouter = require('./routes/trips');
+const entriesRouter = require('./routes/entries');
+const usersRouter = require('./routes/users');
+const exportRouter = require('./routes/export');
 
-// New Phase 4 router
-import authRouter from './routes/auth.js';           // NEW Phase 4
-
-// Middleware
-import { optionalAuth } from './middleware/auth.js'; // NEW Phase 4
-import { enforceExportFormat } from './middleware/subscription.js'; // NEW Phase 4
+// Register Bull queue workers
+require('./queues/aiQueue');
+require('./queues/exportQueue');
 
 const app = express();
 const server = http.createServer(app);
-
-// ── CORS — same as Phase 3, add cookie credentials support ───────────────────
-app.use(cors({
-  origin: [
-    'http://localhost:5173',
-    /^http:\/\/192\.168\.\d+\.\d+:5173$/,
-  ],
-  credentials: true,              // needed for httpOnly cookie auth
-}));
-
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true }));
-app.use(cookieParser());          // NEW Phase 4 — must be before auth middleware
-
-// Soft auth globally: attaches req.user if token present, never rejects
-app.use(optionalAuth);            // NEW Phase 4
-
-// ── Static file serving (uploads) — unchanged ────────────────────────────────
-const UPLOAD_DIR = process.env.UPLOAD_DIR ?? './uploads';
-app.use('/uploads', express.static(UPLOAD_DIR));
-
-// ── API Routes ────────────────────────────────────────────────────────────────
-app.use('/api/auth', authRouter);                         // NEW Phase 4
-app.use('/api/trips', tripsRouter);                       // REPLACED (auth inside)
-app.use('/api/entries', entriesRouter);                   // UNCHANGED
-app.use('/api/export', enforceExportFormat, exportRouter); // Phase 4: tier check added
-
-// ── Health check — unchanged ──────────────────────────────────────────────────
-app.get('/api/health', (req, res) => res.json({ ok: true, phase: 4 }));
-
-// ── Socket.io — unchanged from Phase 3 ───────────────────────────────────────
-const io = new SocketIO(server, {
-  cors: { origin: '*' },          // tighten in production
+const io = new Server(server, {
+  cors: {
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      if (ALLOWED_ORIGINS.includes(origin)) return callback(null, origin);
+      return callback(new Error('Not allowed by CORS'));
+    },
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
+    credentials: true,
+  },
 });
+
+// Make io available to Bull queue workers
+global.__io = io;
+app.set('io', io);
 
 io.on('connection', (socket) => {
-  socket.on('join-trip', (tripId) => socket.join(tripId));
-  socket.on('leave-trip', (tripId) => socket.leave(tripId));
+  socket.on('join-trip', (tripId) => socket.join(`trip:${tripId}`));
+  socket.on('leave-trip', (tripId) => socket.leave(`trip:${tripId}`));
 });
 
-// Make io available to route handlers via app.locals
-app.locals.io = io;
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    if (ALLOWED_ORIGINS.includes(origin)) return callback(null, origin);
+    return callback(new Error('Not allowed by CORS'));
+  },
+  credentials: true,
+}));
 
-// ── Error handler — unchanged ─────────────────────────────────────────────────
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+const uploadDir = process.env.UPLOAD_DIR || path.join(__dirname, '..', 'uploads');
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+
+const exportsDir = process.env.EXPORTS_DIR || path.join(__dirname, '..', 'exports');
+if (!fs.existsSync(exportsDir)) fs.mkdirSync(exportsDir, { recursive: true });
+
+app.use(fileUpload({
+  limits: { fileSize: 50 * 1024 * 1024 },
+  useTempFiles: true,
+  tempFileDir: '/tmp/',
+}));
+
+app.use('/uploads', express.static(uploadDir));
+
+app.use(sessionMiddleware);
+app.use('/api/trips', tripsRouter);
+app.use('/api/entries', entriesRouter);
+app.use('/api/users', usersRouter);
+app.use('/api/export', exportRouter);
+// Export trigger also lives under trips namespace
+app.use('/api', exportRouter);
+
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
 app.use((err, req, res, next) => {
   console.error(err);
-  res.status(500).json({ error: 'Internal server error' });
+  res.status(err.status || 500).json({ error: err.message || 'Internal server error' });
 });
 
-// ── Start ─────────────────────────────────────────────────────────────────────
-const PORT = process.env.PORT ?? 3001;
-server.listen(PORT, () => {
-  console.log(`🚀 TokyoTrip Hub backend listening on :${PORT} (Phase 4)`);
+const PORT = process.env.PORT || 3001;
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`[server] TokyoTrip API running on port ${PORT}`);
+});
+
+process.on('SIGTERM', async () => {
+  await prisma.$disconnect();
+  redisClient.quit();
+  process.exit(0);
 });

@@ -1,202 +1,209 @@
-// backend/src/routes/trips.js  (Phase 4 — replaces existing file)
-// Key additions:
-//   - All mutating endpoints now require auth
-//   - Trip creation enforces FREE tier limit (max 3)
-//   - Trip listing scoped to authenticated user
-//   - Archive endpoint
-//   - Role-based access on sensitive operations
+const router = require('express').Router();
+const { prisma } = require('../lib/prisma');
+const { requireUser } = require('../middleware/session');
 
-import { Router } from 'express';
-import { z } from 'zod';
-import { prisma } from '../lib/prisma.js';
-import { requireAuth, optionalAuth, requireTripRole } from '../middleware/auth.js';
-import { enforceTripLimit } from '../middleware/subscription.js';
+// Generate a short, readable invite code
+function generateInviteCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let code = '';
+  for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
+  return code;
+}
 
-const router = Router();
+/**
+ * POST /api/trips
+ * Create a new trip. The creator becomes the OWNER.
+ * Body: { title, destination?, startDate?, endDate? }
+ */
+router.post('/', requireUser, async (req, res, next) => {
+  try {
+    const { title, destination, startDate, endDate } = req.body;
+    if (!title?.trim()) {
+      return res.status(400).json({ error: 'title is required' });
+    }
 
-// ── GET /trips — list my trips ────────────────────────────────────────────────
+    // Ensure unique invite code
+    let inviteCode;
+    let attempts = 0;
+    do {
+      inviteCode = generateInviteCode();
+      attempts++;
+      if (attempts > 10) throw new Error('Failed to generate unique invite code');
+    } while (await prisma.trip.findUnique({ where: { inviteCode } }));
 
-router.get('/', requireAuth, async (req, res) => {
-  const { archived } = req.query;
-
-  const memberships = await prisma.tripMembership.findMany({
-    where: {
-      userId: req.user.id,
-      trip: { archived: archived === 'true' ? true : false },
-    },
-    include: {
-      trip: {
-        include: {
-          _count: { select: { entries: true, memberships: true } },
+    const trip = await prisma.trip.create({
+      data: {
+        title: title.trim(),
+        destination: destination?.trim() || 'Tokyo, Japan',
+        startDate: startDate ? new Date(startDate) : null,
+        endDate: endDate ? new Date(endDate) : null,
+        inviteCode,
+        memberships: {
+          create: {
+            userId: req.user.id,
+            role: 'OWNER',
+          },
         },
       },
-    },
-    orderBy: { joinedAt: 'desc' },
-  });
-
-  res.json({
-    trips: memberships.map(m => ({
-      ...m.trip,
-      role: m.role,
-      joinedAt: m.joinedAt,
-    })),
-  });
-});
-
-// ── POST /trips — create trip ─────────────────────────────────────────────────
-
-const createSchema = z.object({
-  name: z.string().min(1).max(100),
-  description: z.string().max(500).optional(),
-});
-
-router.post('/', requireAuth, enforceTripLimit, async (req, res) => {
-  const result = createSchema.safeParse(req.body);
-  if (!result.success) {
-    return res.status(422).json({ error: result.error.errors[0].message });
-  }
-
-  const trip = await prisma.trip.create({
-    data: {
-      ...result.data,
-      memberships: {
-        create: { userId: req.user.id, role: 'OWNER' },
+      include: {
+        memberships: {
+          include: { user: true },
+        },
       },
-    },
-    include: {
-      _count: { select: { entries: true, memberships: true } },
-    },
-  });
+    });
 
-  res.status(201).json({ trip, role: 'OWNER' });
+    res.status(201).json({ trip });
+  } catch (err) {
+    next(err);
+  }
 });
 
-// ── POST /trips/:code/join — join by invite code ──────────────────────────────
+/**
+ * POST /api/trips/:code/join
+ * Join a trip by invite code. Idempotent — rejoining returns existing membership.
+ */
+router.post('/:code/join', requireUser, async (req, res, next) => {
+  try {
+    const { code } = req.params;
 
-router.post('/:code/join', requireAuth, async (req, res) => {
-  const trip = await prisma.trip.findUnique({
-    where: { inviteCode: req.params.code },
-  });
-  if (!trip) return res.status(404).json({ error: 'Invalid invite code' });
-  if (trip.archived) return res.status(410).json({ error: 'This trip is archived' });
+    const trip = await prisma.trip.findUnique({
+      where: { inviteCode: code.toUpperCase() },
+    });
+    if (!trip) {
+      return res.status(404).json({ error: 'Trip not found — check the invite code' });
+    }
+    if (trip.status === 'ARCHIVED') {
+      return res.status(410).json({ error: 'This trip has ended and is archived' });
+    }
 
-  // Upsert so joining twice is idempotent
-  const membership = await prisma.tripMembership.upsert({
-    where: { userId_tripId: { userId: req.user.id, tripId: trip.id } },
-    update: {},
-    create: { userId: req.user.id, tripId: trip.id, role: 'EDITOR' },
-  });
-
-  res.json({ trip, role: membership.role });
-});
-
-// ── GET /trips/:id — trip details ─────────────────────────────────────────────
-
-router.get('/:id', requireAuth, requireTripRole('VIEWER'), async (req, res) => {
-  const trip = await prisma.trip.findUnique({
-    where: { id: req.params.id },
-    include: {
-      _count: { select: { entries: true, memberships: true } },
-    },
-  });
-  if (!trip) return res.status(404).json({ error: 'Trip not found' });
-  res.json({ trip, role: req.membership.role });
-});
-
-// ── PATCH /trips/:id — update trip ───────────────────────────────────────────
-
-const updateSchema = z.object({
-  name: z.string().min(1).max(100).optional(),
-  description: z.string().max(500).optional(),
-});
-
-router.patch('/:id', requireAuth, requireTripRole('OWNER'), async (req, res) => {
-  const result = updateSchema.safeParse(req.body);
-  if (!result.success) return res.status(422).json({ error: result.error.errors[0].message });
-
-  const trip = await prisma.trip.update({
-    where: { id: req.params.id },
-    data: result.data,
-  });
-  res.json({ trip });
-});
-
-// ── POST /trips/:id/archive — soft-delete ────────────────────────────────────
-
-router.post('/:id/archive', requireAuth, requireTripRole('OWNER'), async (req, res) => {
-  const trip = await prisma.trip.update({
-    where: { id: req.params.id },
-    data: { archived: true },
-  });
-  res.json({ trip });
-});
-
-router.post('/:id/unarchive', requireAuth, requireTripRole('OWNER'), async (req, res) => {
-  const trip = await prisma.trip.update({
-    where: { id: req.params.id },
-    data: { archived: false },
-  });
-  res.json({ trip });
-});
-
-// ── GET /trips/:id/feed — paginated feed ─────────────────────────────────────
-
-router.get('/:id/feed', requireAuth, requireTripRole('VIEWER'), async (req, res) => {
-  const cursor = req.query.cursor;
-  const limit = Math.min(parseInt(req.query.limit) || 20, 50);
-
-  const entries = await prisma.entry.findMany({
-    where: { tripId: req.params.id },
-    take: limit + 1,
-    ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-    orderBy: { createdAt: 'desc' },
-    include: {
-      user: { select: { id: true, name: true, avatarUrl: true } },
-      reactions: true,
-      comments: {
-        include: { user: { select: { id: true, name: true, avatarUrl: true } } },
-        orderBy: { createdAt: 'asc' },
+    // Upsert membership (idempotent)
+    const membership = await prisma.tripMembership.upsert({
+      where: {
+        userId_tripId: { userId: req.user.id, tripId: trip.id },
       },
-    },
-  });
+      update: {},
+      create: {
+        userId: req.user.id,
+        tripId: trip.id,
+        role: 'MEMBER',
+      },
+    });
 
-  const hasMore = entries.length > limit;
-  const page = hasMore ? entries.slice(0, limit) : entries;
+    // Notify other members via WebSocket
+    const io = req.app.get('io');
+    io.to(`trip:${trip.id}`).emit('member-joined', {
+      tripId: trip.id,
+      user: req.user,
+    });
 
-  res.json({
-    entries: page,
-    nextCursor: hasMore ? page[page.length - 1].id : null,
-  });
-});
+    const fullTrip = await prisma.trip.findUnique({
+      where: { id: trip.id },
+      include: {
+        memberships: { include: { user: true } },
+        _count: { select: { entries: true } },
+      },
+    });
 
-// ── GET /trips/:id/members ────────────────────────────────────────────────────
-
-router.get('/:id/members', requireAuth, requireTripRole('VIEWER'), async (req, res) => {
-  const members = await prisma.tripMembership.findMany({
-    where: { tripId: req.params.id },
-    include: { user: { select: { id: true, name: true, avatarUrl: true, email: true } } },
-    orderBy: { joinedAt: 'asc' },
-  });
-  res.json({ members });
-});
-
-// ── PATCH /trips/:id/members/:userId — change role ───────────────────────────
-
-router.patch('/:id/members/:userId', requireAuth, requireTripRole('OWNER'), async (req, res) => {
-  const { role } = req.body;
-  if (!['EDITOR', 'VIEWER'].includes(role)) {
-    return res.status(422).json({ error: 'Role must be EDITOR or VIEWER' });
+    res.json({ trip: fullTrip, membership });
+  } catch (err) {
+    next(err);
   }
-  // Cannot demote yourself
-  if (req.params.userId === req.user.id) {
-    return res.status(400).json({ error: 'Cannot change your own role' });
-  }
-
-  const membership = await prisma.tripMembership.update({
-    where: { userId_tripId: { userId: req.params.userId, tripId: req.params.id } },
-    data: { role },
-  });
-  res.json({ membership });
 });
 
-export default router;
+/**
+ * GET /api/trips/:id
+ * Get trip details with members.
+ */
+router.get('/:id', requireUser, async (req, res, next) => {
+  try {
+    const trip = await prisma.trip.findUnique({
+      where: { id: req.params.id },
+      include: {
+        memberships: { include: { user: true } },
+        _count: { select: { entries: true } },
+      },
+    });
+    if (!trip) return res.status(404).json({ error: 'Trip not found' });
+
+    // Verify membership
+    const isMember = trip.memberships.some(m => m.userId === req.user.id);
+    if (!isMember) return res.status(403).json({ error: 'Not a member of this trip' });
+
+    res.json({ trip });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * GET /api/trips/:id/feed
+ * Paginated feed of entries for a trip, newest first.
+ * Query params: cursor (entryId for cursor-based pagination), limit (default 20)
+ */
+router.get('/:id/feed', requireUser, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const limit = Math.min(parseInt(req.query.limit) || 20, 50);
+    const cursor = req.query.cursor;
+
+    // Verify membership
+    const membership = await prisma.tripMembership.findUnique({
+      where: { userId_tripId: { userId: req.user.id, tripId: id } },
+    });
+    if (!membership) {
+      return res.status(403).json({ error: 'Not a member of this trip' });
+    }
+
+    const entries = await prisma.entry.findMany({
+      where: { tripId: id },
+      orderBy: { createdAt: 'desc' },
+      take: limit + 1, // fetch one extra to determine if there's a next page
+      ...(cursor && {
+        cursor: { id: cursor },
+        skip: 1,
+      }),
+      include: {
+        user: { select: { id: true, name: true, avatar: true } },
+        reactions: {
+          include: { user: { select: { id: true, name: true } } },
+        },
+        comments: {
+          include: { user: { select: { id: true, name: true, avatar: true } } },
+          orderBy: { createdAt: 'asc' },
+          take: 3, // preview only
+        },
+        _count: { select: { comments: true } },
+      },
+    });
+
+    const hasMore = entries.length > limit;
+    const items = hasMore ? entries.slice(0, limit) : entries;
+    const nextCursor = hasMore ? items[items.length - 1].id : null;
+
+    res.json({
+      entries: items,
+      pagination: { hasMore, nextCursor, limit },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * GET /api/trips/:id/members
+ * List all members of a trip.
+ */
+router.get('/:id/members', requireUser, async (req, res, next) => {
+  try {
+    const members = await prisma.tripMembership.findMany({
+      where: { tripId: req.params.id },
+      include: { user: true },
+      orderBy: { joinedAt: 'asc' },
+    });
+    res.json({ members });
+  } catch (err) {
+    next(err);
+  }
+});
+
+module.exports = router;
