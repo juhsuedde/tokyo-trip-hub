@@ -74,7 +74,6 @@ export default function OnboardScreen({ user, onComplete, onLogout }) {
   if (step === 'trips' || (step === 'start' && trips.length > 0)) {
     return (
       <div style={shell}>
-        <button onClick={() => setStep('start')} style={backBtn}>←</button>
         <h2 className="syne" style={{ fontSize: 24, fontWeight: 700, marginBottom: 6 }}>
           My <span style={{ color: 'var(--accent)' }}>Trips</span>
         </h2>
