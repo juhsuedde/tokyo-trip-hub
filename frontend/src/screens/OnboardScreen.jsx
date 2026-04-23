@@ -46,6 +46,7 @@ export default function OnboardScreen({ user, onComplete, onLogout }) {
   }
 
   async function confirmLeaveTrip(tripId) {
+    console.log('confirmLeaveTrip called with:', tripId);
     setShowConfirmLeave(tripId);
   }
 
@@ -96,7 +97,7 @@ export default function OnboardScreen({ user, onComplete, onLogout }) {
                 </div>
               </div>
               <button
-                onClick={(e) => { e.stopPropagation(); confirmLeaveTrip(trip.id); }}
+                onClick={(e) => { e.stopPropagation(); console.log('clicked x for', trip.id); confirmLeaveTrip(trip.id); }}
                 style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', padding: 8, fontSize: 18 }}
               >
                 ×
