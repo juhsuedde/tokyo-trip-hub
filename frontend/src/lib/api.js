@@ -71,8 +71,14 @@ if (typeof window !== 'undefined') {
 export { syncOfflineEntries };
 
 export const api = {
-  register:        (name) => request('POST', '/users/register', { name }),
-  me:              () => request('GET', '/users/me'),
+  // Auth
+  login: (email, password) => request('POST', '/auth/login', { email, password }),
+  register: (email, password, name) => request('POST', '/auth/register', { email, password, name }),
+  upgrade: (tier) => request('POST', '/auth/upgrade', { tier }),
+  me: async () => {
+    const res = await request('GET', '/auth/me');
+    return res.user || res;
+  },
   createTrip:      (data) => request('POST', '/trips', data),
   joinTrip:        (code) => request('POST', `/trips/${code}/join`),
   getTrip:         (id) => request('GET', `/trips/${id}`),

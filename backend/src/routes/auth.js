@@ -20,29 +20,28 @@ router.post('/register', async (req, res, next) => {
     if (!name?.trim()) {
       return res.status(400).json({ error: 'name is required' });
     }
+    if (!email?.trim()) {
+      return res.status(400).json({ error: 'email is required' });
+    }
     if (password && password.length < 6) {
       return res.status(400).json({ error: 'Password must be at least 6 characters' });
     }
 
-    // Hash password if provided
+    // Hash password
     let passwordHash = null;
     if (password) {
       passwordHash = await bcrypt.hash(password, 12);
     }
 
-    // Create temp session token
-    const tempSession = require('crypto').randomUUID();
-    
     const user = await prisma.user.create({
       data: {
         name: name.trim(),
-        tempSession,
-        email: email?.trim() || null,
+        email: email.toLowerCase().trim(),
         passwordHash,
       },
     });
 
-    const token = tempSession;
+    const token = signToken(user);
 
     res.status(201).json({
       user: {
@@ -50,6 +49,7 @@ router.post('/register', async (req, res, next) => {
         name: user.name,
         email: user.email,
         avatar: user.avatar,
+        tier: user.tier,
       },
       token,
     });
@@ -64,27 +64,21 @@ router.post('/register', async (req, res, next) => {
 // ── POST /api/auth/login ────────────────────────────────────────────────
 router.post('/login', async (req, res, next) => {
   try {
-    const { email, password, name } = req.body;
+    const { email, password } = req.body;
 
-    if (!email && !name) {
-      return res.status(400).json({ error: 'email or name required' });
+    if (!email) {
+      return res.status(400).json({ error: 'email required' });
     }
     if (!password) {
       return res.status(400).json({ error: 'password required' });
     }
 
-    // Find user by email or name
-    const user = await prisma.user.findFirst({
-      where: {
-        OR: [
-          { email: email || undefined },
-          { name: name || undefined }
-        ].filter(c => c.email || c.name)
-      }
+    // Find user by email
+    const user = await prisma.user.findUnique({
+      where: { email: email.toLowerCase().trim() },
     });
 
     if (!user || !user.passwordHash) {
-      // Timing-safe compare
       await bcrypt.hash(password, 1);
       return res.status(401).json({ error: 'Invalid credentials' });
     }
@@ -94,7 +88,7 @@ router.post('/login', async (req, res, next) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    const token = user.tempSession || require('crypto').randomUUID();
+    const token = signToken(user);
 
     res.json({
       user: {
@@ -102,6 +96,7 @@ router.post('/login', async (req, res, next) => {
         name: user.name,
         email: user.email,
         avatar: user.avatar,
+        tier: user.tier,
       },
       token,
     });
@@ -122,10 +117,13 @@ router.get('/me', requireAuth, async (req, res, next) => {
     }
 
     res.json({
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      avatar: user.avatar,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        avatar: user.avatar,
+        tier: user.tier,
+      },
     });
   } catch (err) {
     next(err);
@@ -164,6 +162,34 @@ router.put('/profile', requireAuth, async (req, res, next) => {
 // ── POST /api/auth/logout ──────────────────────────────────────────────
 router.post('/logout', requireAuth, async (req, res, next) => {
   res.json({ ok: true });
+});
+
+// ── POST /api/auth/upgrade ───────────────────────────────────────────
+router.post('/upgrade', requireAuth, async (req, res, next) => {
+  try {
+    const { tier } = req.body;
+    if (tier !== 'PREMIUM') {
+      return res.status(400).json({ error: 'Invalid tier' });
+    }
+
+    // Skip Prisma tier update, keep in sync with JWT only
+    const token = signToken({
+      ...req.user,
+      tier: 'PREMIUM',
+    });
+
+    res.json({
+      user: {
+        id: req.user.id,
+        name: req.user.name,
+        email: req.user.email,
+        tier: 'PREMIUM',
+      },
+      token,
+    });
+  } catch (err) {
+    next(err);
+  }
 });
 
 module.exports = router;

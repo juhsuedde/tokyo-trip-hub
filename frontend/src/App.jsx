@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { api } from './lib/api.js';
 import OnboardScreen from './screens/OnboardScreen.jsx';
+import AuthScreen from './screens/AuthScreen.jsx';
 import FeedScreen from './screens/FeedScreen.jsx';
 import MapScreen from './screens/MapScreen.jsx';
 import ExportModal from './components/ExportModal';
@@ -17,14 +18,17 @@ export default function App() {
     const token = localStorage.getItem('sessionToken');
     const savedTrip = localStorage.getItem('currentTrip');
 
-    if (token && savedTrip) {
+    if (token) {
       api.me()
         .then(({ user }) => {
-          setUser(user);
-          setTrip(JSON.parse(savedTrip));
+          if (savedTrip) {
+            setUser(user);
+            setTrip(JSON.parse(savedTrip));
+          } else {
+            setUser(user);
+          }
         })
         .catch(() => {
-          // Session expired — clear and re-onboard
           localStorage.removeItem('sessionToken');
           localStorage.removeItem('currentTrip');
         })
@@ -33,6 +37,10 @@ export default function App() {
       setLoading(false);
     }
   }, []);
+
+  const handleAuth = (user, token) => {
+    setUser(user);
+  };
 
   const handleOnboarded = (user, trip) => {
     localStorage.setItem('currentTrip', JSON.stringify(trip));
@@ -54,7 +62,13 @@ export default function App() {
     );
   }
 
-  if (!user || !trip) {
+  // Not logged in → Auth screen
+  if (!user) {
+    return <AuthScreen onLogin={handleAuth} />;
+  }
+
+  // Logged in but no trip → Onboard
+  if (!trip) {
     return <OnboardScreen onComplete={handleOnboarded} />;
   }
 
