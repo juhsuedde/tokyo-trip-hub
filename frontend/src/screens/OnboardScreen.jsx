@@ -209,10 +209,13 @@ export default function OnboardScreen({ user, onComplete, onLogout }) {
   }
 
   // Confirm modal - overlay on top of everything
+  console.log('trips:', trips, 'showConfirmLeave:', showConfirmLeave);
+  const confirmTrip = trips.find(t => t.id === showConfirmLeave);
+  console.log('confirmTrip:', confirmTrip);
   if (showConfirmLeave) {
     return (
       <ConfirmModal
-        tripTitle={trips.find(t => t.id === showConfirmLeave)?.title}
+        tripTitle={confirmTrip?.title}
         onConfirm={() => executeLeaveTrip()}
         onCancel={() => setShowConfirmLeave(null)}
       />
