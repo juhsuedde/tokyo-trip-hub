@@ -2,6 +2,33 @@ const router = require('express').Router();
 const { prisma } = require('../lib/prisma');
 const { requireUser } = require('../middleware/session');
 
+// Simple tier check - FREE limit = 3 trips
+const FREE_TRIP_LIMIT = 3;
+
+async function checkTripLimit(req, res, next) {
+  if (!req.user?.id) {
+    return next(); // requireUser will handle auth
+  }
+  
+  const count = await prisma.trip.count({
+    where: {
+      memberships: {
+        some: { userId: req.user.id }
+      }
+    }
+  });
+  
+  if (count >= FREE_TRIP_LIMIT) {
+    return res.status(403).json({
+      error: 'Free tier limit reached',
+      message: 'Upgrade to Premium for unlimited trips',
+      limit: FREE_TRIP_LIMIT
+    });
+  }
+  
+  next();
+}
+
 // Generate a short, readable invite code
 function generateInviteCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -15,7 +42,7 @@ function generateInviteCode() {
  * Create a new trip. The creator becomes the OWNER.
  * Body: { title, destination?, startDate?, endDate? }
  */
-router.post('/', requireUser, async (req, res, next) => {
+router.post('/', requireUser, checkTripLimit, async (req, res, next) => {
   try {
     const { title, destination, startDate, endDate } = req.body;
     if (!title?.trim()) {

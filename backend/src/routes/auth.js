@@ -11,47 +11,34 @@ function validateEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
-async function getUserSubscription(userId) {
-  const sub = await prisma.subscription.findUnique({
-    where: { userId },
-  });
-  return sub?.tier || 'FREE';
-}
-
 // ── POST /api/auth/register ───────────────────────────────────────────
 router.post('/register', async (req, res, next) => {
   try {
     const { email, password, name } = req.body;
 
     // Validation
-    if (!email || !password || !name) {
-      return res.status(400).json({ error: 'email, password, name required' });
+    if (!name?.trim()) {
+      return res.status(400).json({ error: 'name is required' });
     }
-    if (!validateEmail(email)) {
-      return res.status(400).json({ error: 'Invalid email format' });
-    }
-    if (password.length < 6) {
+    if (password && password.length < 6) {
       return res.status(400).json({ error: 'Password must be at least 6 characters' });
     }
 
-// Check existing by name (simple check for demo)
-const existing = await prisma.user.findFirst({
-  where: { name: name },
-});
-    if (existing) {
-      return res.status(409).json({ error: 'Email already registered' });
+    // Hash password if provided
+    let passwordHash = null;
+    if (password) {
+      passwordHash = await bcrypt.hash(password, 12);
     }
 
-    // Hash password
-    const passwordHash = await bcrypt.hash(password, 12);
-
-    // Create user with temp session
+    // Create temp session token
     const tempSession = require('crypto').randomUUID();
     
     const user = await prisma.user.create({
       data: {
-        name,
+        name: name.trim(),
         tempSession,
+        email: email?.trim() || null,
+        passwordHash,
       },
     });
 
@@ -61,11 +48,15 @@ const existing = await prisma.user.findFirst({
       user: {
         id: user.id,
         name: user.name,
+        email: user.email,
         avatar: user.avatar,
       },
       token,
     });
   } catch (err) {
+    if (err.code === 'P2002') {
+      return res.status(409).json({ error: 'User already exists' });
+    }
     next(err);
   }
 });
@@ -73,40 +64,43 @@ const existing = await prisma.user.findFirst({
 // ── POST /api/auth/login ────────────────────────────────────────────────
 router.post('/login', async (req, res, next) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, name } = req.body;
 
-    if (!email || !password) {
-      return res.status(400).json({ error: 'email and password required' });
+    if (!email && !name) {
+      return res.status(400).json({ error: 'email or name required' });
+    }
+    if (!password) {
+      return res.status(400).json({ error: 'password required' });
     }
 
-// Check user by tempSession for backward compat
-const user = await prisma.user.findFirst({
-  where: { name: email },
-});
+    // Find user by email or name
+    const user = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { email: email || undefined },
+          { name: name || undefined }
+        ].filter(c => c.email || c.name)
+      }
+    });
 
     if (!user || !user.passwordHash) {
-      // Timing-safe compare to prevent enumeration
+      // Timing-safe compare
       await bcrypt.hash(password, 1);
-      return res.status(401).json({ error: 'Invalid email or password' });
+      return res.status(401).json({ error: 'Invalid credentials' });
     }
 
     const valid = await bcrypt.compare(password, user.passwordHash);
     if (!valid) {
-      return res.status(401).json({ error: 'Invalid email or password' });
+      return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    const token = signToken({
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      tier: user.subscription?.tier || 'FREE',
-    });
+    const token = user.tempSession || require('crypto').randomUUID();
 
     res.json({
       user: {
         id: user.id,
-        email: user.email,
         name: user.name,
+        email: user.email,
         avatar: user.avatar,
       },
       token,
@@ -121,7 +115,6 @@ router.get('/me', requireAuth, async (req, res, next) => {
   try {
     const user = await prisma.user.findUnique({
       where: { id: req.user.id },
-      include: { subscription: true },
     });
 
     if (!user) {
@@ -133,8 +126,6 @@ router.get('/me', requireAuth, async (req, res, next) => {
       email: user.email,
       name: user.name,
       avatar: user.avatar,
-      tier: user.subscription?.tier || 'FREE',
-      preferences: user.preferences,
     });
   } catch (err) {
     next(err);
@@ -144,14 +135,19 @@ router.get('/me', requireAuth, async (req, res, next) => {
 // ── PUT /api/auth/profile ───────────────────────────────────────────
 router.put('/profile', requireAuth, async (req, res, next) => {
   try {
-    const { name, avatar } = req.body;
+    const { name, avatar, email, password } = req.body;
+
+    const updateData = {};
+    if (name) updateData.name = name;
+    if (avatar !== undefined) updateData.avatar = avatar;
+    if (email) updateData.email = email;
+    if (password) {
+      updateData.passwordHash = await bcrypt.hash(password, 12);
+    }
 
     const user = await prisma.user.update({
       where: { id: req.user.id },
-      data: {
-        ...(name && { name }),
-        ...(avatar && { avatar }),
-      },
+      data: updateData,
     });
 
     res.json({
@@ -167,7 +163,6 @@ router.put('/profile', requireAuth, async (req, res, next) => {
 
 // ── POST /api/auth/logout ──────────────────────────────────────────────
 router.post('/logout', requireAuth, async (req, res, next) => {
-  // In a full implementation, we'd add the token to a Redis blacklist
   res.json({ ok: true });
 });
 

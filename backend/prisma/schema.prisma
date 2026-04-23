@@ -11,8 +11,10 @@ datasource db {
 model User {
   id           String   @id @default(uuid())
   name         String
-  avatar       String?  // URL to avatar image
-  tempSession  String   @unique // localStorage session token
+  email        String?  @unique
+  avatar       String?
+  tempSession  String?  @unique
+  passwordHash String?  @map("password_hash")
   createdAt    DateTime @default(now())
 
   memberships  TripMembership[]
