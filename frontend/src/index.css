@@ -572,9 +572,11 @@ textarea::placeholder {
 .entry-photo {
   width: 100%;
   display: block;
-  max-height: 320px;
-  object-fit: cover;
+  max-height: 280px;
+  object-fit: contain;
+  object-position: center;
   background: var(--bg3);
+  border-radius: 8px;
 }
 
 .entry-audio {
