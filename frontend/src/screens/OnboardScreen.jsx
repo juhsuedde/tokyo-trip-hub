@@ -110,7 +110,7 @@ export default function OnboardScreen({ user, onComplete, onLogout }) {
                 </div>
               </div>
               <button
-                onClick={(e) => { e.stopPropagation(); confirmLeaveTrip(trip.id); }}
+                onClick={(e) => { e.stopPropagation(); alert('click x for trip: ' + trip.id); confirmLeaveTrip(trip.id); }}
                 style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', padding: 8, fontSize: 18 }}
               >
                 ×
