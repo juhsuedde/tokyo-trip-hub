@@ -12,6 +12,8 @@ export default function OnboardScreen({ user, onComplete, onLogout }) {
   const [loading, setLoading] = useState(false);
   const [showConfirmLeave, setShowConfirmLeave] = useState(null);
 
+  console.log('OnboardScreen render, showConfirmLeave:', showConfirmLeave);
+
   useEffect(() => {
     if (user) {
       loadTrips();
