@@ -29,6 +29,11 @@ async function request(method, path, body, isFormData = false) {
   });
   
   const text = await res.text();
+  if (res.status === 401) {
+    localStorage.removeItem('sessionToken');
+    window.location.href = '/login';
+    throw new Error('Unauthorized');
+  }
   if (!res.ok) {
     const data = text ? JSON.parse(text) : {};
     throw new Error(data.error || `HTTP ${res.status}`);

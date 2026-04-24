@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api } from './lib/api.js';
+import { registerBackgroundSync, syncOfflineEntries } from './lib/offlineQueue.js';
 import OnboardScreen from './screens/OnboardScreen.jsx';
 import AuthScreen from './screens/AuthScreen.jsx';
 import FeedScreen from './screens/FeedScreen.jsx';
@@ -27,6 +28,8 @@ export default function App() {
           } else {
             setUser(user);
           }
+          registerBackgroundSync();
+          syncOfflineEntries();
         })
         .catch(() => {
           localStorage.removeItem('sessionToken');
@@ -38,8 +41,20 @@ export default function App() {
     }
   }, []);
 
+  // Also sync on online event as fallback
+  useEffect(() => {
+    const handleOnline = () => {
+      syncOfflineEntries();
+    };
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
+  }, []);
+
+  // Also register background sync on auth
   const handleAuth = (user, token) => {
+    localStorage.setItem('sessionToken', token);
     setUser(user);
+    registerBackgroundSync();
   };
 
   const handleOnboarded = (user, trip) => {

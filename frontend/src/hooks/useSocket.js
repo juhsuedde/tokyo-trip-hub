@@ -7,10 +7,16 @@ let socket = null;
 
 function getSocket() {
   if (!socket) {
+    const token = localStorage.getItem('sessionToken');
     socket = io(WS_URL, {
+      auth: { token },
       autoConnect: false,
       transports: ['websocket', 'polling'],
     });
+  }
+  // Refresh auth token on reconnect if changed
+  if (socket.auth?.token !== localStorage.getItem('sessionToken')) {
+    socket.auth.token = localStorage.getItem('sessionToken');
   }
   return socket;
 }

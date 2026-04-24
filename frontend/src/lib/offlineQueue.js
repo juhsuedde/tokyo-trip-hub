@@ -60,6 +60,22 @@ async function deletePending(id) {
 }
 
 /**
+ * Register for Background Sync API to automatically sync when online.
+ * Call this on app initialization.
+ */
+export async function registerBackgroundSync() {
+  if ('serviceWorker' in navigator && 'SyncManager' in window) {
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      await registration.sync.register('sync-pending-entries');
+      console.log('[offline] Background Sync registered');
+    } catch (err) {
+      console.warn('[offline] Background Sync not available:', err.message);
+    }
+  }
+}
+
+/**
  * Returns the number of items waiting to be synced.
  */
 export async function getPendingCount() {
@@ -88,7 +104,7 @@ export async function syncOfflineEntries() {
     try {
       let body;
       let headers = {};
-      if (token) headers['X-Session-Token'] = token;
+      if (token) headers['Authorization'] = `Bearer ${token}`;
 
       if (item.fileBlob) {
         // Reconstruct FormData for photo/voice entries

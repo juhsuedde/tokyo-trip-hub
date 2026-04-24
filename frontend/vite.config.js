@@ -26,6 +26,18 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
         runtimeCaching: [
           {
+            // Background Sync event handler
+            urlPattern: /^https?:\/\/.*\/api\/entries\/.*/,
+            handler: 'NetworkOnly',
+            options: {
+              cacheName: 'api-entries',
+              backgroundSync: {
+                name: 'sync-pending-entries',
+                maxRetentionTime: 24 * 60,
+              },
+            },
+          },
+          {
             // Cache API responses for offline feed
             urlPattern: /^https?:\/\/.*\/api\/trips\/.*\/feed/,
             handler: 'StaleWhileRevalidate',

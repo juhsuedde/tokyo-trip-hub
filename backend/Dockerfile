@@ -5,6 +5,7 @@ RUN apt-get update && apt-get install -y \
     openssl \
     ca-certificates \
     chromium \
+    curl \
     fonts-noto \
     fonts-noto-cjk \
     --no-install-recommends \

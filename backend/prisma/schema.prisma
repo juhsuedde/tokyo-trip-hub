@@ -11,17 +11,20 @@ datasource db {
 model User {
   id           String   @id @default(uuid())
   name         String
-  email        String?  @unique
+  email        String   @unique
   avatar       String?
   tier         Tier     @default(FREE)
   tempSession  String?  @unique
-  passwordHash String?  @map("password_hash")
-  createdAt    DateTime @default(now())
+  passwordHash String   @map("password_hash")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
-  memberships  TripMembership[]
-  entries      Entry[]
-  reactions    Reaction[]
-  comments     Comment[]
+  memberships      TripMembership[]
+  entries          Entry[]
+  reactions        Reaction[]
+  comments         Comment[]
+  refreshTokens    RefreshToken[]
+  auditLogs       AuditLog[]
 
   @@map("users")
 }
@@ -156,4 +159,35 @@ model Comment {
 
   @@index([entryId, createdAt])
   @@map("comments")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?
+  action     String
+  entityType String
+  entityId   String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
 }

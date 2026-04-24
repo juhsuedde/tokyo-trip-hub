@@ -21,9 +21,21 @@ router.use(attachUser);
 const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, '..', '..', 'uploads');
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3001';
 
+const ALLOWED_MIME_TYPES = {
+  PHOTO: ['image/jpeg', 'image/png', 'image/webp', 'image/gif'],
+  VIDEO: ['video/mp4', 'video/webm', 'video/quicktime'],
+  VOICE: ['audio/mpeg', 'audio/wav', 'audio/webm', 'audio/ogg'],
+};
+
+const ALLOWED_EXTENSIONS = {
+  PHOTO: ['.jpg', '.jpeg', '.png', '.webp', '.gif'],
+  VIDEO: ['.mp4', '.webm', '.mov'],
+  VOICE: ['.mp3', '.wav', '.webm', '.ogg'],
+};
+
 // ── Helper: save uploaded file ────────────────────────────────────────────────
 async function saveFile(file, type) {
-  const ext = path.extname(file.name) || (type === 'PHOTO' ? '.jpg' : '.webm');
+  const ext = path.extname(file.name)?.toLowerCase() || (type === 'PHOTO' ? '.jpg' : '.webm');
   const filename = `${uuidv4()}${ext}`;
   const dest = path.join(UPLOAD_DIR, filename);
 
@@ -37,6 +49,17 @@ async function saveFile(file, type) {
   }
 
   return `/uploads/${filename}`;
+}
+
+function validateFileMime(file, type) {
+  const allowedMimes = ALLOWED_MIME_TYPES[type];
+  const allowedExts = ALLOWED_EXTENSIONS[type];
+  if (!allowedMimes || !allowedExts) return false;
+
+  const ext = path.extname(file.name)?.toLowerCase();
+  const mime = file.mimetype;
+
+  return allowedExts.includes(ext) && allowedMimes.includes(mime);
 }
 
 // ── POST /api/entries/trips/:tripId/entries ────────────────────────────────────
@@ -55,6 +78,9 @@ router.post('/trips/:tripId/entries', async (req, res, next) => {
     const type = (req.body.type || req.files?.file ? req.body.type : 'TEXT').toUpperCase();
 
     if (req.files?.file) {
+      if (!validateFileMime(req.files.file, type)) {
+        return res.status(400).json({ error: 'Invalid file type' });
+      }
       contentUrl = await saveFile(req.files.file, type);
     }
 

@@ -23,15 +23,12 @@ router.post('/register', async (req, res, next) => {
     if (!email?.trim()) {
       return res.status(400).json({ error: 'email is required' });
     }
-    if (password && password.length < 6) {
+    if (!password || password.length < 6) {
       return res.status(400).json({ error: 'Password must be at least 6 characters' });
     }
 
     // Hash password
-    let passwordHash = null;
-    if (password) {
-      passwordHash = await bcrypt.hash(password, 12);
-    }
+    const passwordHash = await bcrypt.hash(password, 12);
 
     const user = await prisma.user.create({
       data: {

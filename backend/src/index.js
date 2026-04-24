@@ -6,6 +6,8 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const cookieParser = require('cookie-parser');
 const fileUpload = require('express-fileupload');
 const path = require('path');
@@ -13,13 +15,11 @@ const fs = require('fs');
 
 const ALLOWED_ORIGINS = [
   'http://localhost:5173',
-  'http://192.168.0.245:5173',
   'http://127.0.0.1:5173',
 ];
 
 const { prisma } = require('./lib/prisma');
 const { redisClient } = require('./lib/redis');
-const { sessionMiddleware } = require('./middleware/session');
 const { optionalAuth } = require('./middleware/auth');
 const { enforceExportFormat } = require('./middleware/subscription');
 const tripsRouter = require('./routes/trips');
@@ -39,7 +39,7 @@ const io = new Server(server, {
     origin: (origin, callback) => {
       if (!origin) return callback(null, true);
       if (ALLOWED_ORIGINS.includes(origin)) return callback(null, origin);
-      return callback(new Error('Not allowed by CORS'));
+      return callback(null, false);
     },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
     credentials: true,
@@ -49,6 +49,19 @@ const io = new Server(server, {
 // Make io available to Bull queue workers
 global.__io = io;
 app.set('io', io);
+
+io.use((socket, next) => {
+  const token = socket.handshake.auth.token || socket.handshake.headers.authorization?.replace('Bearer ', '');
+  if (!token) return next(new Error('Authentication required'));
+  try {
+    const jwt = require('jsonwebtoken');
+    const payload = jwt.verify(token, process.env.JWT_SECRET);
+    socket.user = payload;
+    next();
+  } catch (err) {
+    next(new Error('Invalid token'));
+  }
+});
 
 io.on('connection', (socket) => {
   socket.on('join-trip', (tripId) => socket.join(`trip:${tripId}`));
@@ -64,7 +77,20 @@ app.use(cors({
   credentials: true,
 }));
 
-app.use(express.json({ limit: '50mb' }));
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginEmbedderPolicy: false,
+}));
+
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use('/api', limiter);
+
+app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
@@ -78,24 +104,45 @@ app.use(fileUpload({
   limits: { fileSize: 50 * 1024 * 1024 },
   useTempFiles: true,
   tempFileDir: '/tmp/',
+  abortOnLimit: true,
+  responseOnLimit: 'File too large (max 50MB)',
 }));
 
-app.use('/uploads', express.static(uploadDir));
+function serveUploadsWithAuth(req, res, next) {
+  const token = req.headers.authorization?.replace('Bearer ', '') || req.cookies?.token;
+  if (!token) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+  try {
+    require('jsonwebtoken').verify(token, process.env.JWT_SECRET);
+    next();
+  } catch {
+    res.status(401).json({ error: 'Invalid token' });
+  }
+}
+
+app.use('/uploads', serveUploadsWithAuth, express.static(uploadDir, {
+  setHeaders: (res, path) => {
+    res.set('Cache-Control', 'private, max-age=3600');
+  },
+}));
 
 // Token auth middleware
 app.use(optionalAuth);
 
-// Legacy session middleware for backward compat
-app.use(sessionMiddleware);
-
 // API Routes
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use('/api/auth', authLimiter);
 app.use('/api/auth', authRouter);
 app.use('/api/trips', tripsRouter);
 app.use('/api/entries', entriesRouter);
 app.use('/api/users', usersRouter);
 app.use('/api/export', enforceExportFormat, exportRouter);
-// Export trigger also lives under trips namespace
-app.use('/api', exportRouter);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
@@ -112,6 +159,12 @@ server.listen(PORT, '0.0.0.0', () => {
 });
 
 process.on('SIGTERM', async () => {
+  await prisma.$disconnect();
+  redisClient.quit();
+  process.exit(0);
+});
+
+process.on('SIGINT', async () => {
   await prisma.$disconnect();
   redisClient.quit();
   process.exit(0);
