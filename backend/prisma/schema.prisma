@@ -14,8 +14,13 @@ model User {
   email        String   @unique
   avatar       String?
   tier         Tier     @default(FREE)
+  isAdmin      Boolean  @default(false)
   tempSession  String?  @unique
   passwordHash String   @map("password_hash")
+  
+  passwordResetTokenHash String?
+  passwordResetExpiry    DateTime?
+  
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
@@ -24,7 +29,9 @@ model User {
   reactions        Reaction[]
   comments         Comment[]
   refreshTokens    RefreshToken[]
-  auditLogs       AuditLog[]
+  auditLogs        AuditLog[]
+  apiKeys          ApiKey[]
+  trips            Trip[]
 
   @@map("users")
 }
@@ -32,6 +39,7 @@ model User {
 enum Tier {
   FREE
   PREMIUM
+  PRO
 }
 
 model Trip {
@@ -42,12 +50,23 @@ model Trip {
   endDate     DateTime?
   inviteCode  String     @unique
   status      TripStatus @default(ACTIVE)
+  
+  customDomain  String?  @unique
+  isPublished   Boolean  @default(false)
+  publishedSlug String?  @unique
+  publishedUrl  String?
+  
+  ownerId String?
+  owner   User?   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 
   memberships TripMembership[]
   entries     Entry[]
 
+  @@index([ownerId, status])
+  @@index([publishedSlug])
   @@map("trips")
 }
 
@@ -162,15 +181,18 @@ model Comment {
 }
 
 model RefreshToken {
-  id        String   @id @default(uuid())
+  id        String    @id @default(uuid())
+  tokenHash String    @unique
   userId    String
-  token     String   @unique
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  family    String
   expiresAt DateTime
-  createdAt DateTime @default(now())
-
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  usedAt    DateTime?
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
 
   @@index([userId])
+  @@index([family])
   @@index([expiresAt])
   @@map("refresh_tokens")
 }
@@ -190,4 +212,18 @@ model AuditLog {
   @@index([entityType, entityId])
   @@index([createdAt])
   @@map("audit_logs")
+}
+
+model ApiKey {
+  id         String    @id @default(uuid())
+  keyHash    String    @unique
+  name       String
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lastUsedAt DateTime?
+  expiresAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId])
+  @@map("api_keys")
 }

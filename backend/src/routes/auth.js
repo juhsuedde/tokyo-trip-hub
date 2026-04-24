@@ -4,23 +4,25 @@ const bcrypt = require('bcrypt');
 const { prisma } = require('../lib/prisma');
 const { requireAuth, signToken } = require('../middleware/auth');
 const { LoginSchema, RegisterSchema, validateAsync } = require('../lib/validation');
+const { issueAccessToken, issueRefreshToken, rotateRefreshToken, revokeAllRefreshTokens, requestPasswordReset, resetPassword } = require('../lib/auth.service');
 
 const router = express.Router();
+
+const setRefreshCookie = (res, token) => {
+  res.cookie('refreshToken', token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict',
+    maxAge: 30 * 24 * 60 * 60 * 1000,
+    path: '/api/auth',
+  });
+};
 
 // ── POST /api/auth/register ───────────────────────────────────────────
 router.post('/register', validateAsync(RegisterSchema), async (req, res, next) => {
   try {
     const { email, password, name } = req.validated;
-      return res.status(400).json({ error: 'name is required' });
-    }
-    if (!email?.trim()) {
-      return res.status(400).json({ error: 'email is required' });
-    }
-    if (!password || password.length < 6) {
-      return res.status(400).json({ error: 'Password must be at least 6 characters' });
-    }
 
-    // Hash password
     const passwordHash = await bcrypt.hash(password, 12);
 
     const user = await prisma.user.create({
@@ -31,17 +33,21 @@ router.post('/register', validateAsync(RegisterSchema), async (req, res, next) =
       },
     });
 
-    const token = signToken(user);
+    const accessToken = issueAccessToken(user);
+    const refreshToken = await issueRefreshToken(user.id);
+    setRefreshCookie(res, refreshToken);
 
     res.status(201).json({
+      accessToken,
+      refreshToken,
       user: {
         id: user.id,
         name: user.name,
         email: user.email,
         avatar: user.avatar,
         tier: user.tier,
+        isAdmin: user.isAdmin,
       },
-      token,
     });
   } catch (err) {
     if (err.code === 'P2002') {
@@ -56,7 +62,6 @@ router.post('/login', validateAsync(LoginSchema), async (req, res, next) => {
   try {
     const { email, password } = req.validated;
 
-    // Find user by email
     const user = await prisma.user.findUnique({
       where: { email: email.toLowerCase().trim() },
     });
@@ -71,17 +76,21 @@ router.post('/login', validateAsync(LoginSchema), async (req, res, next) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    const token = signToken(user);
+    const accessToken = issueAccessToken(user);
+    const refreshToken = await issueRefreshToken(user.id);
+    setRefreshCookie(res, refreshToken);
 
     res.json({
+      accessToken,
+      refreshToken,
       user: {
         id: user.id,
         name: user.name,
         email: user.email,
         avatar: user.avatar,
         tier: user.tier,
+        isAdmin: user.isAdmin,
       },
-      token,
     });
   } catch (err) {
     next(err);
@@ -144,7 +153,58 @@ router.put('/profile', requireAuth, async (req, res, next) => {
 
 // ── POST /api/auth/logout ──────────────────────────────────────────────
 router.post('/logout', requireAuth, async (req, res, next) => {
-  res.json({ ok: true });
+  try {
+    await revokeAllRefreshTokens(req.user.id);
+    res.clearCookie('refreshToken', { path: '/api/auth' });
+    res.json({ message: 'Logged out successfully' });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── POST /api/auth/refresh ──────────────────────────────────────────────
+router.post('/refresh', async (req, res) => {
+  const rawToken = req.cookies?.refreshToken || req.body?.refreshToken;
+  if (!rawToken) {
+    return res.status(401).json({ error: 'No refresh token provided' });
+  }
+
+  try {
+    const result = await rotateRefreshToken(rawToken);
+    setRefreshCookie(res, result.refreshToken);
+    res.json(result);
+  } catch (err) {
+    res.clearCookie('refreshToken', { path: '/api/auth' });
+    const status = err.status || 401;
+    res.status(status).json({ error: err.message });
+  }
+});
+
+// ── POST /api/auth/forgot-password ───────────────────────────────────────
+router.post('/forgot-password', async (req, res) => {
+  const { email } = req.body;
+  if (!email) {
+    return res.status(400).json({ error: 'Email is required' });
+  }
+
+  await requestPasswordReset(email).catch((err) => console.error('Password reset error:', err));
+  res.json({ message: 'If that email is registered, a reset link has been sent.' });
+});
+
+// ── POST /api/auth/reset-password ────────────────────────────────────────
+router.post('/reset-password', async (req, res) => {
+  const { token, password } = req.body;
+  if (!token || !password) {
+    return res.status(400).json({ error: 'Token and password are required' });
+  }
+
+  try {
+    await resetPassword(token, password);
+    res.json({ message: 'Password reset successfully. Please log in.' });
+  } catch (err) {
+    const status = err.status || 500;
+    res.status(status).json({ error: err.message });
+  }
 });
 
 // ── POST /api/auth/upgrade ───────────────────────────────────────────

@@ -210,4 +210,63 @@ router.delete('/:id', requireUser, async (req, res, next) => {
   }
 });
 
+// POST /api/trips/:id/archive
+router.post('/:id/archive', requireUser, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    
+    const membership = await prisma.tripMembership.findUnique({
+      where: { userId_tripId: { userId: req.user.id, tripId: id } },
+    });
+    
+    if (!membership || membership.role !== 'OWNER') {
+      return res.status(403).json({ error: 'Only owners can archive trips' });
+    }
+    
+    const trip = await prisma.trip.update({
+      where: { id },
+      data: { status: 'ARCHIVED' },
+    });
+    
+    res.json({ id: trip.id, status: trip.status });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/trips/:id/duplicate
+router.post('/:id/duplicate', requireUser, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const original = await prisma.trip.findUnique({
+      where: { id },
+      include: { entries: true },
+    });
+    
+    if (!original) {
+      return res.status(404).json({ error: 'Trip not found' });
+    }
+    
+    const newTrip = await prisma.trip.create({
+      data: {
+        title: `${original.title} (Copy)`,
+        destination: original.destination,
+        startDate: original.startDate,
+        endDate: original.endDate,
+        ownerId: req.user.id,
+        status: 'ACTIVE',
+        inviteCode: generateInviteCode(),
+      },
+    });
+    
+    await prisma.tripMembership.create({
+      data: { userId: req.user.id, tripId: newTrip.id, role: 'OWNER' },
+    });
+    
+    res.status(201).json(newTrip);
+  } catch (err) {
+    next(err);
+  }
+});
+
 module.exports = router;

@@ -40,6 +40,37 @@ async function uploadToS3(file, key, contentType) {
   return `https://${s3Bucket}.s3.${process.env.AWS_REGION || 'us-east-1'}.amazonaws.com/${key}`;
 }
 
+let cloudinary = null;
+
+async function getCloudinary() {
+  if (!cloudinary && STORAGE_TYPE === 'cloudinary') {
+    const { v2: cloudinarySdk } = require('cloudinary');
+    cloudinary = cloudinarySdk.config({
+      cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+      api_key: process.env.CLOUDINARY_API_KEY,
+      api_secret: process.env.CLOUDINARY_API_SECRET,
+    });
+    cloudinarySdk.uploader;
+  }
+  return cloudinary;
+}
+
+async function uploadToCloudinary(file, folder) {
+  const { v2: cloudinarySdk } = require('cloudinary');
+  cloudinarySdk.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET,
+  });
+  
+  const result = await cloudinarySdk.uploader.upload(file.tempFilePath, {
+    folder: folder || 'tokyotrip',
+    resource_type: 'auto',
+  });
+  
+  return result.secure_url;
+}
+
 async function saveFile(file, type) {
   const ext = path.extname(file.name).toLowerCase();
   const filename = `${type.toLowerCase()}_${Date.now()}_${Math.random().toString(36).slice(2)}${ext}`;
@@ -54,6 +85,12 @@ async function saveFile(file, type) {
     const key = `uploads/${filename}`;
     const url = await uploadToS3(file, key, contentType);
     logger.info({ filename, type, storage: 's3' }, 'File uploaded to S3');
+    return url;
+  }
+
+  if (STORAGE_TYPE === 'cloudinary') {
+    const url = await uploadToCloudinary(file, 'tokyotrip/uploads');
+    logger.info({ filename, type, storage: 'cloudinary' }, 'File uploaded to Cloudinary');
     return url;
   }
 
@@ -77,6 +114,21 @@ async function deleteFile(url) {
     if (key) {
       await client.send(new DeleteObjectCommand({ Bucket: s3Bucket, Key: key }));
       logger.info({ key }, 'File deleted from S3');
+    }
+    return;
+  }
+
+  if (STORAGE_TYPE === 'cloudinary' && url.includes('cloudinary.com')) {
+    const { v2: cloudinarySdk } = require('cloudinary');
+    cloudinarySdk.config({
+      cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+      api_key: process.env.CLOUDINARY_API_KEY,
+      api_secret: process.env.CLOUDINARY_API_SECRET,
+    });
+    const publicId = url.split('/upload/')[1]?.replace(/\.[^.]+$/, '');
+    if (publicId) {
+      await cloudinarySdk.uploader.destroy(publicId);
+      logger.info({ publicId }, 'File deleted from Cloudinary');
     }
     return;
   }

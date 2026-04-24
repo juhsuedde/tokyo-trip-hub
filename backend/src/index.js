@@ -178,6 +178,12 @@ app.use('/api/entries', entriesRouter);
 app.use('/api/users', usersRouter);
 app.use('/api/export', enforceExportFormat, exportRouter);
 
+const apikeysRouter = require('./routes/apikeys');
+const adminRouter = require('./routes/admin');
+
+app.use('/api/apikeys', apikeysRouter.router);
+app.use('/api/admin', adminRouter);
+
 app.get('/api/health', async (req, res) => {
   const checks = {
     postgres: { status: 'unknown' },
@@ -227,6 +233,11 @@ app.use((err, req, res, next) => {
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, '0.0.0.0', () => {
   logger.info({ port: PORT }, 'TokyoTrip API running');
+  
+  if (process.env.NODE_ENV !== 'test') {
+    const { startDataRetentionJobs } = require('./lib/dataRetention');
+    startDataRetentionJobs();
+  }
 });
 
 async function gracefulShutdown(signal) {

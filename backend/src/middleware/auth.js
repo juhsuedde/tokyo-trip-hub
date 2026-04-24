@@ -43,6 +43,7 @@ async function requireAuth(req, res, next) {
       email: payload.email,
       name: payload.name,
       tier: payload.tier || 'FREE',
+      isAdmin: payload.isAdmin || false,
     };
 
     next();
