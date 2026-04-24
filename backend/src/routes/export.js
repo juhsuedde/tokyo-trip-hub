@@ -8,8 +8,10 @@ const fs = require('fs');
 const { prisma } = require('../lib/prisma');
 const { exportQueue } = require('../queues/exportQueue');
 const { EXPORTS_DIR } = require('../lib/exportEngine');
+const { requireUser } = require('../middleware/session');
 
 const router = express.Router();
+router.use(requireUser);
 
 // POST /api/trips/:id/export
 router.post('/trips/:id/export', async (req, res, next) => {

@@ -105,7 +105,7 @@ export const api = {
 
   // ── Export ──────────────────────────────────────────────────────────────────
   startExport: (tripId, { format, template, entryIds }) =>
-    request('POST', `/trips/${tripId}/export`, { format, template, entryIds }),
+    request('POST', `/export/trips/${tripId}/export`, { format, template, entryIds }),
   getExportStatus: (jobId) =>
     request('GET', `/export/${jobId}/status`),
   // Download URL is a direct link: /api/export/:jobId/download

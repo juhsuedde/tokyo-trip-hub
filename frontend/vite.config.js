@@ -70,6 +70,13 @@ export default defineConfig({
         '/uploads': {
           target: 'http://127.0.0.1:3001',
           changeOrigin: true,
+          configure: (proxy, options) => {
+            proxy.on('proxyReq', (proxyReq, req, res) => {
+              if (req.headers.authorization) {
+                proxyReq.setHeader('Authorization', req.headers.authorization);
+              }
+            });
+          },
         },
         '/socket.io': {
           target: 'http://127.0.0.1:3001',

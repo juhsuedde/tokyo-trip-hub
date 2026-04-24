@@ -98,6 +98,7 @@ async function seed() {
         startDate: new Date('2026-04-20'),
         endDate: new Date('2026-04-28'),
         inviteCode: 'TOKYO1',
+        ownerId: users[0].id,
       },
     });
     console.log(`  ✓ Trip created: ${trip.title} (code: ${trip.inviteCode})`);

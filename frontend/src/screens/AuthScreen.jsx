@@ -22,8 +22,8 @@ export default function AuthScreen({ onLogin }) {
         data = await api.register(email, password, name);
       }
       
-      localStorage.setItem('sessionToken', data.token);
-      onLogin(data.user, data.token);
+      localStorage.setItem('sessionToken', data.accessToken);
+      onLogin(data.user, data.accessToken);
     } catch (err) {
       setError(err.message);
     } finally {

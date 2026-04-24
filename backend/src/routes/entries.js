@@ -9,14 +9,28 @@
 
 const express = require('express');
 const path = require('path');
-const sharp = require('sharp');
 const { v4: uuidv4 } = require('uuid');
 const { prisma } = require('../lib/prisma');
 const { attachUser } = require('../middleware/session');
-const aiQueue = require('../queues/aiQueue');
-const { CreateEntrySchema, CreateReactionSchema, CreateCommentSchema, validateAsync } = require('../lib/validation');
+let aiQueue;
+if (process.env.NODE_ENV !== 'test') {
+  try {
+    ({ aiQueue } = require('../queues/aiQueue'));
+  } catch {
+    // Bull/Redis unavailable — AI jobs will be skipped
+  }
+}
+const { CreateEntrySchema, CreateReactionSchema, CreateCommentSchema, UpdateEntrySchema, validateAsync } = require('../lib/validation');
 const { saveFile, deleteFile } = require('../lib/storage');
 const { sanitizeHtml } = require('../lib/sanitizer');
+const { checkEntryLimit } = require('../middleware/subscription');
+
+let sharp = null;
+try {
+  sharp = require('sharp');
+} catch (e) {
+  console.warn('sharp not available - MIME validation will use extension only');
+}
 
 const router = express.Router();
 router.use(attachUser);
@@ -41,6 +55,8 @@ async function validateFileMime(file, type) {
 
   const ext = path.extname(file.name)?.toLowerCase();
   if (!ext || !allowedExts.includes(ext)) return false;
+
+  if (!sharp) return true;
 
   try {
     const metadata = await sharp(file.tempFilePath).metadata();
@@ -68,7 +84,7 @@ async function validateFileMime(file, type) {
 }
 
 // ── POST /api/entries/trips/:tripId/entries ────────────────────────────────────
-router.post('/trips/:tripId/entries', async (req, res, next) => {
+router.post('/trips/:tripId/entries', checkEntryLimit, async (req, res, next) => {
   try {
     const { tripId } = req.params;
     const userId = req.user.id;
@@ -108,27 +124,29 @@ router.post('/trips/:tripId/entries', async (req, res, next) => {
     });
 
     // ── Enqueue AI jobs ───────────────────────────────────────────────────────
-    if (type === 'VOICE' && contentUrl) {
-      const audioUrl = contentUrl.startsWith('http') ? contentUrl : `${BASE_URL}${contentUrl}`;
-      await aiQueue.add('transcribe-audio', {
-        entryId: entry.id,
-        tripId,
-        contentUrl: audioUrl,
-      });
-    }
+    if (aiQueue) {
+      if (type === 'VOICE' && contentUrl) {
+        const audioUrl = contentUrl.startsWith('http') ? contentUrl : `${BASE_URL}${contentUrl}`;
+        await aiQueue.add('transcribe-audio', {
+          entryId: entry.id,
+          tripId,
+          contentUrl: audioUrl,
+        });
+      }
 
-    if (type === 'PHOTO' && contentUrl) {
-      const imageUrl = contentUrl.startsWith('http') ? contentUrl : `${BASE_URL}${contentUrl}`;
-      await aiQueue.add('process-image-ocr', {
-        entryId: entry.id,
-        tripId,
-        contentUrl: imageUrl,
-      });
+      if (type === 'PHOTO' && contentUrl) {
+        const imageUrl = contentUrl.startsWith('http') ? contentUrl : `${BASE_URL}${contentUrl}`;
+        await aiQueue.add('process-image-ocr', {
+          entryId: entry.id,
+          tripId,
+          contentUrl: imageUrl,
+        });
+      }
     }
 
     // ── Real-time broadcast ───────────────────────────────────────────────────
     const io = req.app.get('io');
-    io.to(`trip:${tripId}`).emit('new-entry', entry);
+    if (io) io.to(`trip:${tripId}`).emit('new-entry', entry);
 
     res.status(201).json(entry);
   } catch (err) {
@@ -150,9 +168,42 @@ router.delete('/:id', async (req, res, next) => {
     await prisma.entry.delete({ where: { id: req.params.id } });
 
     const io = req.app.get('io');
-    io.to(`trip:${entry.tripId}`).emit('entry-deleted', { entryId: entry.id });
+    if (io) io.to(`trip:${entry.tripId}`).emit('entry-deleted', { entryId: entry.id });
 
     res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── PATCH /api/entries/:id ───────────────────────────────────────────────────
+router.patch('/:id', validateAsync(UpdateEntrySchema), async (req, res, next) => {
+  try {
+    const entry = await prisma.entry.findUnique({ where: { id: req.params.id } });
+    if (!entry) return res.status(404).json({ error: 'Entry not found' });
+    if (entry.userId !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
+
+    const { rawText, category, sentiment, tags } = req.validated;
+    const data = {};
+    if (rawText !== undefined) data.rawText = sanitizeHtml(rawText);
+    if (category !== undefined) data.category = category;
+    if (sentiment !== undefined) data.sentiment = sentiment;
+    if (tags !== undefined) data.tags = tags;
+
+    const updated = await prisma.entry.update({
+      where: { id: req.params.id },
+      data,
+      include: {
+        user: { select: { id: true, name: true, avatar: true } },
+        reactions: true,
+        comments: { include: { user: { select: { id: true, name: true } } } },
+      },
+    });
+
+    const io = req.app.get('io');
+    if (io) io.to(`trip:${entry.tripId}`).emit('entry-updated', updated);
+
+    res.json(updated);
   } catch (err) {
     next(err);
   }
@@ -194,6 +245,29 @@ router.post('/:id/comments', validateAsync(CreateCommentSchema), async (req, res
       include: { user: { select: { id: true, name: true } } },
     });
     res.status(201).json(comment);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── DELETE /api/entries/:entryId/comments/:commentId ─────────────────────────
+router.delete('/:entryId/comments/:commentId', async (req, res, next) => {
+  try {
+    const { entryId, commentId } = req.params;
+    const comment = await prisma.comment.findUnique({ where: { id: commentId } });
+    if (!comment) return res.status(404).json({ error: 'Comment not found' });
+    if (comment.entryId !== entryId) return res.status(400).json({ error: 'Comment does not belong to this entry' });
+
+    // Allow comment author or entry author to delete
+    if (comment.userId !== req.user.id) {
+      const entry = await prisma.entry.findUnique({ where: { id: entryId } });
+      if (!entry || entry.userId !== req.user.id) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+    }
+
+    await prisma.comment.delete({ where: { id: commentId } });
+    res.json({ success: true });
   } catch (err) {
     next(err);
   }

@@ -1,7 +1,7 @@
 'use strict';
 
 const { prisma } = require('../lib/prisma');
-const { logger } = require('./logger');
+const { logger } = require('../lib/logger');
 
 const TIER_LIMITS = {
   FREE: {
@@ -34,6 +34,7 @@ const TIER_LIMITS = {
 };
 
 async function checkTripLimit(req, res, next) {
+  if (!req.user) return res.status(401).json({ error: 'Authentication required' });
   const { id: userId, tier } = req.user;
   const limits = TIER_LIMITS[tier];
 
@@ -61,14 +62,18 @@ async function checkTripLimit(req, res, next) {
 }
 
 async function checkEntryLimit(req, res, next) {
+  if (!req.user) return res.status(401).json({ error: 'Authentication required' });
   const { tier } = req.user;
-  const { id: tripId } = req.params;
+  const { id: tripId, tripId: tripIdAlt } = req.params;
+  const targetTripId = tripId || tripIdAlt;
   const limits = TIER_LIMITS[tier];
+
+  if (!limits) return next();
 
   if (limits.maxEntriesPerTrip === Infinity) return next();
 
   try {
-    const count = await prisma.entry.count({ where: { tripId } });
+    const count = await prisma.entry.count({ where: { tripId: targetTripId } });
 
     if (count >= limits.maxEntriesPerTrip) {
       return res.status(403).json({
@@ -130,5 +135,6 @@ module.exports = {
   checkTripLimit,
   checkEntryLimit,
   checkExportFormat,
+  enforceExportFormat: checkExportFormat,
   requireTier,
 };

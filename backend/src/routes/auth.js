@@ -3,7 +3,7 @@ const express = require('express');
 const bcrypt = require('bcrypt');
 const { prisma } = require('../lib/prisma');
 const { requireAuth, signToken } = require('../middleware/auth');
-const { LoginSchema, RegisterSchema, validateAsync } = require('../lib/validation');
+const { LoginSchema, RegisterSchema, UpdateProfileSchema, validateAsync } = require('../lib/validation');
 const { issueAccessToken, issueRefreshToken, rotateRefreshToken, revokeAllRefreshTokens, requestPasswordReset, resetPassword } = require('../lib/auth.service');
 
 const router = express.Router();
@@ -123,14 +123,14 @@ router.get('/me', requireAuth, async (req, res, next) => {
 });
 
 // ── PUT /api/auth/profile ───────────────────────────────────────────
-router.put('/profile', requireAuth, async (req, res, next) => {
+router.put('/profile', requireAuth, validateAsync(UpdateProfileSchema), async (req, res, next) => {
   try {
-    const { name, avatar, email, password } = req.body;
+    const { name, avatar, email, password } = req.validated;
 
     const updateData = {};
-    if (name) updateData.name = name;
+    if (name) updateData.name = name.trim();
     if (avatar !== undefined) updateData.avatar = avatar;
-    if (email) updateData.email = email;
+    if (email) updateData.email = email.toLowerCase().trim();
     if (password) {
       updateData.passwordHash = await bcrypt.hash(password, 12);
     }

@@ -2,8 +2,11 @@
 
 const express = require('express');
 const { prisma } = require('../lib/prisma');
+const { requireAuth } = require('../middleware/auth');
 
 const router = express.Router();
+
+router.use(requireAuth);
 
 function requireAdmin(req, res, next) {
   if (!req.user?.isAdmin) {

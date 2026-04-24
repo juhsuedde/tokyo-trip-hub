@@ -14,16 +14,21 @@ const RegisterSchema = z.object({
 const CreateTripSchema = z.object({
   title: z.string().min(1, 'Title is required').max(200),
   destination: z.string().max(200).optional(),
-  startDate: z.string().datetime().optional(),
-  endDate: z.string().datetime().optional(),
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().or(z.literal('')),
+  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().or(z.literal('')),
 });
 
 const UpdateTripSchema = z.object({
   title: z.string().min(1).max(200).optional(),
   destination: z.string().max(200).optional(),
-  startDate: z.string().datetime().optional().nullable(),
-  endDate: z.string().datetime().optional().nullable(),
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().or(z.literal('')).nullable(),
+  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().or(z.literal('')).nullable(),
   status: z.enum(['ACTIVE', 'ENDED', 'ARCHIVED']).optional(),
+});
+
+const PublishTripSchema = z.object({
+  slug: z.string().min(3).max(100).regex(/^[a-z0-9][a-z0-9-]*[a-z0-9]$/, 'Slug must be lowercase alphanumeric with hyphens').optional(),
+  customDomain: z.string().max(253).optional().nullable(),
 });
 
 const CreateEntrySchema = z.object({
@@ -51,21 +56,30 @@ const CreateCommentSchema = z.object({
   text: z.string().min(1, 'Comment is required').max(2000),
 });
 
+const UpdateProfileSchema = z.object({
+  name: z.string().min(1, 'Name is required').max(100).optional(),
+  avatar: z.string().max(500).optional(),
+  email: z.string().email('Invalid email format').optional(),
+  password: z.string().min(6, 'Password must be at least 6 characters').optional(),
+});
+
 function validate(body, schema) {
   return schema.parse(body);
 }
 
-function validateAsync(req, res, next, schema) {
-  try {
-    const data = schema.parse(req.body);
-    req.validated = data;
-    next();
-  } catch (err) {
-    if (err.name === 'ZodError') {
-      return res.status(400).json({ error: err.errors[0].message });
+function validateAsync(schema) {
+  return (req, res, next) => {
+    try {
+      const data = schema.parse(req.body);
+      req.validated = data;
+      next();
+    } catch (err) {
+      if (err.name === 'ZodError') {
+        return res.status(400).json({ error: err.errors[0].message });
+      }
+      next(err);
     }
-    next(err);
-  }
+  };
 }
 
 module.exports = {
@@ -73,10 +87,12 @@ module.exports = {
   RegisterSchema,
   CreateTripSchema,
   UpdateTripSchema,
+  PublishTripSchema,
   CreateEntrySchema,
   UpdateEntrySchema,
   CreateReactionSchema,
   CreateCommentSchema,
+  UpdateProfileSchema,
   validate,
   validateAsync,
 };

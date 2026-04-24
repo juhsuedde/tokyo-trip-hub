@@ -106,7 +106,7 @@ function requireTripRole(requiredRole) {
         return res.status(403).json({ error: 'Not a member of this trip' });
       }
 
-      const roleHierarchy = { VIEWER: 0, EDITOR: 1, OWNER: 2 };
+      const roleHierarchy = { MEMBER: 0, OWNER: 1 };
       if (roleHierarchy[membership.role] < roleHierarchy[requiredRole]) {
         return res.status(403).json({ error: `Requires ${requiredRole} role` });
       }

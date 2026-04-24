@@ -153,11 +153,11 @@ export default function ExportModal({ tripId, socket, onClose }) {
         template,
         ...(selectedIds !== null ? { entryIds: selectedIds } : {}),
       };
-      const res = await fetch(`/api/trips/${tripId}/export`, {
+      const res = await fetch(`/api/export/trips/${tripId}/export`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-Session-Token': localStorage.getItem('sessionToken') || '',
+          'Authorization': `Bearer ${localStorage.getItem('sessionToken') || ''}`,
         },
         body: JSON.stringify(body),
       });

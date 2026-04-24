@@ -37,45 +37,60 @@ async function issueRefreshToken(userId, familyId) {
 
 async function rotateRefreshToken(rawToken) {
   const tokenHash = sha256(rawToken);
-  const stored = await prisma.refreshToken.findUnique({
-    where: { tokenHash },
-    include: { user: true },
-  });
 
-  if (!stored) {
-    throw Object.assign(new Error('Refresh token not found'), { status: 401 });
-  }
+  const result = await prisma.$transaction(async (tx) => {
+    // Acquire a row-level lock to prevent concurrent rotation of the same token
+    const [locked] = await tx.$queryRaw`
+      SELECT id, "tokenHash", "userId", family, "expiresAt", "usedAt", "revokedAt"
+      FROM refresh_tokens
+      WHERE "tokenHash" = ${tokenHash}
+      FOR UPDATE
+    `;
+    if (!locked) {
+      throw Object.assign(new Error('Refresh token not found'), { status: 401 });
+    }
 
-  if (stored.usedAt || stored.revokedAt) {
-    logger.warn({ family: stored.family, userId: stored.userId }, 'Refresh token reuse detected - revoking family');
-    await prisma.refreshToken.updateMany({
-      where: { family: stored.family, revokedAt: null },
-      data: { revokedAt: new Date() },
-    });
-    throw Object.assign(new Error('Refresh token already used. Please log in again.'), { status: 401 });
-  }
+    if (locked.usedAt || locked.revokedAt) {
+      logger.warn({ family: locked.family, userId: locked.userId }, 'Refresh token reuse detected - revoking family');
+      await tx.refreshToken.updateMany({
+        where: { family: locked.family, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+      throw Object.assign(new Error('Refresh token already used. Please log in again.'), { status: 401 });
+    }
 
-  if (stored.expiresAt < new Date()) {
-    throw Object.assign(new Error('Refresh token expired'), { status: 401 });
-  }
+    if (locked.expiresAt < new Date()) {
+      throw Object.assign(new Error('Refresh token expired'), { status: 401 });
+    }
 
-  const [, newRawToken] = await prisma.$transaction(async (tx) => {
     await tx.refreshToken.update({
-      where: { id: stored.id },
+      where: { id: locked.id },
       data: { usedAt: new Date() },
     });
-    const newToken = await issueRefreshToken(stored.userId, stored.family);
-    return [null, newToken];
+
+    // Fetch user for the access token
+    const user = await tx.user.findUnique({ where: { id: locked.userId } });
+
+    const newRawToken = crypto.randomBytes(64).toString('hex');
+    const newHash = sha256(newRawToken);
+    const family = locked.family;
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + REFRESH_EXPIRY_DAYS);
+
+    await tx.refreshToken.create({
+      data: { tokenHash: newHash, userId: locked.userId, family, expiresAt },
+    });
+
+    const accessToken = issueAccessToken(user);
+
+    return {
+      accessToken,
+      refreshToken: newRawToken,
+      user: { id: user.id, email: user.email, name: user.name, tier: user.tier, isAdmin: user.isAdmin },
+    };
   });
 
-  const { user } = stored;
-  const accessToken = issueAccessToken(user);
-
-  return {
-    accessToken,
-    refreshToken: newRawToken,
-    user: { id: user.id, email: user.email, name: user.name, tier: user.tier, isAdmin: user.isAdmin },
-  };
+  return result;
 }
 
 async function revokeAllRefreshTokens(userId) {

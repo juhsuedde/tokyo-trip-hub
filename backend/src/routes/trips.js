@@ -1,31 +1,9 @@
 const router = require('express').Router();
 const { prisma } = require('../lib/prisma');
 const { requireUser } = require('../middleware/session');
-const { CreateTripSchema, validateAsync } = require('../lib/validation');
+const { CreateTripSchema, UpdateTripSchema, PublishTripSchema, validateAsync } = require('../lib/validation');
 const { sanitizeHtml } = require('../lib/sanitizer');
-
-const FREE_TRIP_LIMIT = 3;
-
-async function checkTripLimit(req, res, next) {
-  if (!req.user?.id) return next();
-  
-  const count = await prisma.trip.count({
-    where: { 
-      memberships: { some: { userId: req.user.id } },
-      status: { not: 'ARCHIVED' },
-    },
-  });
-  
-  if (count >= FREE_TRIP_LIMIT) {
-    return res.status(403).json({
-      error: 'Free tier limit reached',
-      message: 'Upgrade to Premium for unlimited trips',
-      limit: FREE_TRIP_LIMIT
-    });
-  }
-  
-  next();
-}
+const { checkTripLimit, requireTier } = require('../middleware/subscription');
 
 function generateInviteCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -50,38 +28,28 @@ router.get('/', requireUser, async (req, res, next) => {
 
 // POST /api/trips
 router.post('/', requireUser, checkTripLimit, validateAsync(CreateTripSchema), async (req, res, next) => {
-  try {
-    const { title, destination, startDate, endDate } = req.validated;
+  const { title, destination, startDate, endDate } = req.validated;
+  const data = {
+    title: sanitizeHtml(title.trim()),
+    destination: sanitizeHtml(destination) || 'Tokyo, Japan',
+    ownerId: req.user.id,
+    startDate: startDate && startDate.trim() ? new Date(startDate) : null,
+    endDate: endDate && endDate.trim() ? new Date(endDate) : null,
+    memberships: { create: { userId: req.user.id, role: 'OWNER' } },
+  };
 
-    // Try to create with a unique invite code (handle race condition)
-    const trip = await prisma.trip.create({
-      data: {
-        title: sanitizeHtml(title.trim()),
-        destination: sanitizeHtml(destination) || 'Tokyo, Japan',
-        inviteCode: generateInviteCode(),
-        startDate: startDate ? new Date(startDate) : null,
-        endDate: endDate ? new Date(endDate) : null,
-        memberships: { create: { userId: req.user.id, role: 'OWNER' } },
-      },
-    });
-
-    res.status(201).json({ trip, membership: { role: 'OWNER' } });
-  } catch (err) {
-    if (err.code === 'P2002') {
-      // Retry with different code on unique constraint violation
-      const trip = await prisma.trip.create({
-        data: {
-          title: sanitizeHtml(title.trim()),
-          destination: sanitizeHtml(destination) || 'Tokyo, Japan',
-          inviteCode: generateInviteCode(),
-          startDate: startDate ? new Date(startDate) : null,
-          endDate: endDate ? new Date(endDate) : null,
-          memberships: { create: { userId: req.user.id, role: 'OWNER' } },
-        },
-      });
+  const MAX_ATTEMPTS = 3;
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    try {
+      const trip = await prisma.trip.create({ data: { ...data, inviteCode: generateInviteCode() } });
       return res.status(201).json({ trip, membership: { role: 'OWNER' } });
+    } catch (err) {
+      if (err.code === 'P2002' && attempt < MAX_ATTEMPTS - 1) continue;
+      if (err.code === 'P2002') {
+        return res.status(503).json({ error: 'Could not generate a unique invite code. Please try again.' });
+      }
+      return next(err);
     }
-    next(err);
   }
 });
 
@@ -169,6 +137,91 @@ router.get('/:id/members', requireUser, async (req, res, next) => {
   }
 });
 
+// PATCH /api/trips/:id/members/:userId
+router.patch('/:id/members/:userId', requireUser, async (req, res, next) => {
+  try {
+    const { id: tripId, userId: targetUserId } = req.params;
+
+    const callerMembership = await prisma.tripMembership.findUnique({
+      where: { userId_tripId: { userId: req.user.id, tripId } },
+    });
+    if (!callerMembership || callerMembership.role !== 'OWNER') {
+      return res.status(403).json({ error: 'Only owners can change member roles' });
+    }
+
+    const { role } = req.body;
+    if (!role || !['OWNER', 'MEMBER'].includes(role)) {
+      return res.status(400).json({ error: 'Role must be OWNER or MEMBER' });
+    }
+
+    const targetMembership = await prisma.tripMembership.findUnique({
+      where: { userId_tripId: { userId: targetUserId, tripId } },
+    });
+    if (!targetMembership) {
+      return res.status(404).json({ error: 'User is not a member of this trip' });
+    }
+
+    const updated = await prisma.tripMembership.update({
+      where: { id: targetMembership.id },
+      data: { role },
+      include: { user: { select: { id: true, name: true, email: true, avatar: true } } },
+    });
+
+    res.json({ membership: updated });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/trips/:id/transfer-ownership
+router.post('/:id/transfer-ownership', requireUser, async (req, res, next) => {
+  try {
+    const { id: tripId } = req.params;
+    const { newOwnerId } = req.body;
+    if (!newOwnerId) {
+      return res.status(400).json({ error: 'newOwnerId is required' });
+    }
+
+    const callerMembership = await prisma.tripMembership.findUnique({
+      where: { userId_tripId: { userId: req.user.id, tripId } },
+    });
+    if (!callerMembership || callerMembership.role !== 'OWNER') {
+      return res.status(403).json({ error: 'Only the current owner can transfer ownership' });
+    }
+
+    const targetMembership = await prisma.tripMembership.findUnique({
+      where: { userId_tripId: { userId: newOwnerId, tripId } },
+    });
+    if (!targetMembership) {
+      return res.status(404).json({ error: 'Target user is not a member of this trip' });
+    }
+
+    await prisma.$transaction([
+      prisma.tripMembership.update({
+        where: { id: callerMembership.id },
+        data: { role: 'MEMBER' },
+      }),
+      prisma.tripMembership.update({
+        where: { id: targetMembership.id },
+        data: { role: 'OWNER' },
+      }),
+      prisma.trip.update({
+        where: { id: tripId },
+        data: { ownerId: newOwnerId },
+      }),
+    ]);
+
+    const trip = await prisma.trip.findUnique({
+      where: { id: tripId },
+      include: { memberships: { include: { user: { select: { id: true, name: true, avatar: true } } } } },
+    });
+
+    res.json({ trip });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // DELETE /api/trips/:id - Leave or delete based on ownership
 router.delete('/:id', requireUser, async (req, res, next) => {
   try {
@@ -210,6 +263,38 @@ router.delete('/:id', requireUser, async (req, res, next) => {
   }
 });
 
+// PATCH /api/trips/:id
+router.patch('/:id', requireUser, validateAsync(UpdateTripSchema), async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const membership = await prisma.tripMembership.findUnique({
+      where: { userId_tripId: { userId: req.user.id, tripId: id } },
+    });
+    if (!membership || membership.role !== 'OWNER') {
+      return res.status(403).json({ error: 'Only owners can update trips' });
+    }
+
+    const { title, destination, startDate, endDate, status } = req.validated;
+    const data = {};
+    if (title !== undefined) data.title = sanitizeHtml(title.trim());
+    if (destination !== undefined) data.destination = sanitizeHtml(destination);
+    if (startDate !== undefined) data.startDate = startDate ? new Date(startDate) : null;
+    if (endDate !== undefined) data.endDate = endDate ? new Date(endDate) : null;
+    if (status !== undefined) data.status = status;
+
+    const trip = await prisma.trip.update({
+      where: { id },
+      data,
+      include: { memberships: { include: { user: true } }, _count: { select: { entries: true } } },
+    });
+
+    res.json({ trip });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST /api/trips/:id/archive
 router.post('/:id/archive', requireUser, async (req, res, next) => {
   try {
@@ -229,6 +314,62 @@ router.post('/:id/archive', requireUser, async (req, res, next) => {
     });
     
     res.json({ id: trip.id, status: trip.status });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/trips/:id/publish
+router.post('/:id/publish', requireUser, requireTier('PREMIUM'), validateAsync(PublishTripSchema), async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const membership = await prisma.tripMembership.findUnique({
+      where: { userId_tripId: { userId: req.user.id, tripId: id } },
+    });
+    if (!membership || membership.role !== 'OWNER') {
+      return res.status(403).json({ error: 'Only owners can publish trips' });
+    }
+
+    const { slug, customDomain } = req.validated;
+    const data = { isPublished: true };
+    if (slug) data.publishedSlug = slug;
+    else if (!slug) data.publishedSlug = id.slice(0, 8);
+    data.publishedUrl = `${process.env.APP_BASE_URL || 'http://localhost:5173'}/p/${data.publishedSlug}`;
+    if (customDomain !== undefined) data.customDomain = customDomain;
+
+    const trip = await prisma.trip.update({
+      where: { id },
+      data,
+    });
+
+    res.json({ id: trip.id, isPublished: trip.isPublished, publishedSlug: trip.publishedSlug, publishedUrl: trip.publishedUrl, customDomain: trip.customDomain });
+  } catch (err) {
+    if (err.code === 'P2002') {
+      return res.status(409).json({ error: 'This slug or custom domain is already taken' });
+    }
+    next(err);
+  }
+});
+
+// POST /api/trips/:id/unpublish
+router.post('/:id/unpublish', requireUser, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const membership = await prisma.tripMembership.findUnique({
+      where: { userId_tripId: { userId: req.user.id, tripId: id } },
+    });
+    if (!membership || membership.role !== 'OWNER') {
+      return res.status(403).json({ error: 'Only owners can unpublish trips' });
+    }
+
+    const trip = await prisma.trip.update({
+      where: { id },
+      data: { isPublished: false, publishedSlug: null, publishedUrl: null, customDomain: null },
+    });
+
+    res.json({ id: trip.id, isPublished: trip.isPublished });
   } catch (err) {
     next(err);
   }

@@ -67,7 +67,7 @@ async function requireUser(req, res, next) {
  * Like requireUser but attaches user if token present, continues if not.
  */
 async function attachUser(req, res, next) {
-  const token = req.sessionToken;
+  const token = req.sessionToken || (req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.slice(7) : null);
   if (!token) return next();
 
   try {
