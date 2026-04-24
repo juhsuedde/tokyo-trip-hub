@@ -15,6 +15,7 @@ require('dotenv').config();
 const Bull  = require('bull');
 const path  = require('path');
 const { prisma } = require('../lib/prisma');
+const { logger } = require('../lib/logger');
 const { selectProvider, withProviderFallback, GroqProvider, OpenAIProvider, OpenRouterProvider } = require('../lib/aiProviders');
 
 // ─── Queue setup ──────────────────────────────────────────────────────────────
@@ -32,11 +33,16 @@ const aiQueue = new Bull('ai-processing', {
   },
 });
 
+const { redisClient, redisPub } = require('../lib/redis');
+const { io: globalIo } = global.__io ? { io: global.__io } : { io: null };
+
+const CHANNEL = 'tokyotrip:notifications';
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function emitToTrip(tripId, event, payload) {
-  const io = global.__io;
-  if (io) io.to(`trip:${tripId}`).emit(event, payload);
+  // Publish to Redis channel for main process to emit
+  redisPub.publish(CHANNEL, JSON.stringify({ tripId, event, payload }));
 }
 
 async function markEntryStatus(entryId, status, extra = {}) {
@@ -50,7 +56,7 @@ async function markEntryStatus(entryId, status, extra = {}) {
 
 aiQueue.process('transcribe-audio', async (job) => {
   const { entryId, tripId, audioFilePath } = job.data;
-  console.log(`[aiQueue] transcribe-audio job ${job.id} — entry ${entryId}`);
+  logger.info({ jobId: job.id, entryId }, 'Processing transcribe-audio job');
 
   await job.progress(10);
   emitToTrip(tripId, 'ai-processing', { entryId, status: 'processing', task: 'transcribe' });
@@ -71,7 +77,7 @@ aiQueue.process('transcribe-audio', async (job) => {
       async () => {
         // Explicit fallback: if primary was Groq and failed, try OpenAI
         if (process.env.OPENAI_API_KEY && process.env.GROQ_API_KEY) {
-          console.log('[aiQueue] Groq failed, falling back to OpenAI for transcription');
+          logger.warn('Groq failed, falling back to OpenAI for transcription');
           const fallback = new OpenAIProvider(process.env.OPENAI_API_KEY);
           return fallback.transcribeAudio(audioFilePath);
         }
@@ -99,7 +105,7 @@ aiQueue.process('transcribe-audio', async (job) => {
   });
 
   await job.progress(100);
-  console.log(`[aiQueue] transcribe-audio done — entry ${entryId}`);
+  logger.info({ jobId: job.id, entryId }, 'transcribe-audio job completed');
   return { entryId, transcription };
 });
 
@@ -107,7 +113,7 @@ aiQueue.process('transcribe-audio', async (job) => {
 
 aiQueue.process('process-image-ocr', async (job) => {
   const { entryId, tripId, imageUrl } = job.data;
-  console.log(`[aiQueue] process-image-ocr job ${job.id} — entry ${entryId}`);
+  logger.info({ jobId: job.id, entryId }, 'Processing process-image-ocr job');
 
   await job.progress(10);
   emitToTrip(tripId, 'ai-processing', { entryId, status: 'processing', task: 'vision' });
@@ -128,7 +134,7 @@ aiQueue.process('process-image-ocr', async (job) => {
       async () => {
         // Explicit fallback: if primary was OpenRouter and failed, try OpenAI
         if (process.env.OPENAI_API_KEY && process.env.OPENROUTER_API_KEY) {
-          console.log('[aiQueue] OpenRouter failed, falling back to OpenAI for vision');
+          logger.warn('OpenRouter failed, falling back to OpenAI for vision');
           const fallback = new OpenAIProvider(process.env.OPENAI_API_KEY);
           return fallback.analyzeImage(imageUrl);
         }
@@ -162,19 +168,19 @@ aiQueue.process('process-image-ocr', async (job) => {
     aiStatus: 'processed',
   });
 
-  await job.progress(100);
-  console.log(`[aiQueue] process-image-ocr done — entry ${entryId}, category: ${category}`);
+await job.progress(100);
+  logger.info({ jobId: job.id, entryId, category }, 'process-image-ocr job completed');
   return { entryId, category, sentiment, tags };
 });
 
-// ─── Queue event hooks ────────────────────────────────────────────────────────
+// ─── Queue event hooks ────────────────────────────────────────────────────────────
 
 aiQueue.on('completed', (job, result) => {
-  console.log(`[aiQueue] Job ${job.id} (${job.name}) completed`);
+  logger.info({ jobId: job.id, jobName: job.name }, 'Job completed');
 });
 
 aiQueue.on('failed', (job, err) => {
-  console.error(`[aiQueue] Job ${job.id} (${job.name}) failed after ${job.attemptsMade} attempts: ${err.message}`);
+  logger.error({ jobId: job.id, jobName: job.name, attempts: job.attemptsMade, error: err.message }, 'Job failed');
   // Emit failure so frontend can reflect it
   if (job.data?.tripId && job.data?.entryId) {
     emitToTrip(job.data.tripId, 'entry-updated', {
@@ -186,7 +192,7 @@ aiQueue.on('failed', (job, err) => {
 });
 
 aiQueue.on('stalled', (job) => {
-  console.warn(`[aiQueue] Job ${job.id} stalled and will be retried`);
+  logger.warn({ jobId: job.id }, 'Job stalled and will be retried');
 });
 
 module.exports = { aiQueue };

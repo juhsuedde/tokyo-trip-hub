@@ -4,7 +4,7 @@ const { prisma } = require('../lib/prisma');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {
-  console.warn('JWT_SECRET env var not set - auth will not work');
+  throw new Error('JWT_SECRET env var is required');
 }
 
 function extractToken(req) {
@@ -112,7 +112,8 @@ function requireTripRole(requiredRole) {
 
       next();
     } catch (err) {
-      console.error('[requireTripRole]', err);
+      const { logger } = require('../lib/logger');
+      logger.error({ err }, '[requireTripRole] error');
       res.status(500).json({ error: 'Internal error' });
     }
   };

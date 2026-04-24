@@ -6,17 +6,20 @@ const WS_URL = import.meta.env.VITE_WS_URL || '';
 let socket = null;
 
 function getSocket() {
+  const token = localStorage.getItem('sessionToken');
+  
+  // Force reconnect if token changed or socket doesn't exist
+  if (socket && socket.auth?.token !== token) {
+    socket.disconnect();
+    socket = null;
+  }
+  
   if (!socket) {
-    const token = localStorage.getItem('sessionToken');
     socket = io(WS_URL, {
       auth: { token },
       autoConnect: false,
       transports: ['websocket', 'polling'],
     });
-  }
-  // Refresh auth token on reconnect if changed
-  if (socket.auth?.token !== localStorage.getItem('sessionToken')) {
-    socket.auth.token = localStorage.getItem('sessionToken');
   }
   return socket;
 }

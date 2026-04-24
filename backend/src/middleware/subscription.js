@@ -40,7 +40,8 @@ async function enforceTripLimit(req, res, next) {
 
     next();
   } catch (err) {
-    console.error('[enforceTripLimit]', err);
+    const { logger } = require('../lib/logger');
+    logger.error({ err }, '[enforceTripLimit] error');
     next();
   }
 }

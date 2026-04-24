@@ -98,4 +98,9 @@ async function attachUser(req, res, next) {
   }
 }
 
-module.exports = { sessionMiddleware, requireUser, attachUser };
+/**
+ * Alias attachUser as optionalAuth for compatibility
+ */
+const optionalAuth = attachUser;
+
+module.exports = { sessionMiddleware, optionalAuth, requireUser, attachUser };

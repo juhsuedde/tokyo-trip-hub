@@ -3,21 +3,14 @@ const express = require('express');
 const bcrypt = require('bcrypt');
 const { prisma } = require('../lib/prisma');
 const { requireAuth, signToken } = require('../middleware/auth');
+const { LoginSchema, RegisterSchema, validateAsync } = require('../lib/validation');
 
 const router = express.Router();
 
-// ── Helpers ───────────────────────────────────────────────────────────
-function validateEmail(email) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-}
-
 // ── POST /api/auth/register ───────────────────────────────────────────
-router.post('/register', async (req, res, next) => {
+router.post('/register', validateAsync(RegisterSchema), async (req, res, next) => {
   try {
-    const { email, password, name } = req.body;
-
-    // Validation
-    if (!name?.trim()) {
+    const { email, password, name } = req.validated;
       return res.status(400).json({ error: 'name is required' });
     }
     if (!email?.trim()) {
@@ -59,16 +52,9 @@ router.post('/register', async (req, res, next) => {
 });
 
 // ── POST /api/auth/login ────────────────────────────────────────────────
-router.post('/login', async (req, res, next) => {
+router.post('/login', validateAsync(LoginSchema), async (req, res, next) => {
   try {
-    const { email, password } = req.body;
-
-    if (!email) {
-      return res.status(400).json({ error: 'email required' });
-    }
-    if (!password) {
-      return res.status(400).json({ error: 'password required' });
-    }
+    const { email, password } = req.validated;
 
     // Find user by email
     const user = await prisma.user.findUnique({

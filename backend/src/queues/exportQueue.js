@@ -4,6 +4,7 @@
  */
 require('dotenv').config();
 const Bull = require('bull');
+const { logger } = require('../lib/logger');
 const { generateExport } = require('../lib/exportEngine');
 
 const exportQueue = new Bull('generate-export', {
@@ -15,7 +16,7 @@ const exportQueue = new Bull('generate-export', {
 
 exportQueue.process(async (job) => {
   const { tripId, format, template, entryIds, userId } = job.data;
-  console.log(`[exportQueue] Processing job ${job.id}: ${format} export for trip ${tripId}`);
+  logger.info({ jobId: job.id, format, tripId }, 'Processing export job');
 
   try {
     await job.progress(10);
@@ -35,7 +36,7 @@ exportQueue.process(async (job) => {
 
     return result;
   } catch (err) {
-    console.error(`[exportQueue] Job ${job.id} failed:`, err);
+    logger.error({ jobId: job.id, error: err.message }, 'Export job failed');
     const io = global.__io;
     if (io) {
       io.to(`trip:${tripId}`).emit('export-complete', {
@@ -49,11 +50,11 @@ exportQueue.process(async (job) => {
 });
 
 exportQueue.on('completed', (job, result) => {
-  console.log(`[exportQueue] Job ${job.id} completed: ${result.filePath}`);
+  logger.info({ jobId: job.id, filePath: result.filePath }, 'Export job completed');
 });
 
 exportQueue.on('failed', (job, err) => {
-  console.error(`[exportQueue] Job ${job.id} failed:`, err.message);
+  logger.error({ jobId: job.id, error: err.message }, 'Export job failed');
 });
 
 module.exports = { exportQueue };

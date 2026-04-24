@@ -4,6 +4,8 @@
  */
 const path = require('path');
 const fs = require('fs');
+const { logger } = require('./logger');
+const { sanitizeEntry } = require('./sanitizer');
 const { prisma } = require('./prisma');
 
 const EXPORTS_DIR = process.env.EXPORTS_DIR || path.join(__dirname, '../../exports');
@@ -14,7 +16,7 @@ function scheduleCleanup(filePath) {
   setTimeout(() => {
     try {
       if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-      console.log(`[exportEngine] Cleaned up: ${filePath}`);
+      logger.info({ filePath }, 'Cleaned up export file');
     } catch {}
   }, 24 * 60 * 60 * 1000);
 }
@@ -34,6 +36,11 @@ async function fetchExportData(tripId, entryIds) {
     },
   });
   if (!trip) throw new Error('Trip not found');
+  
+  trip.title = trip.title?.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  trip.destination = trip.destination?.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  trip.entries = trip.entries.map(sanitizeEntry);
+  
   return trip;
 }
 

@@ -1,6 +1,8 @@
 const router = require('express').Router();
 const { prisma } = require('../lib/prisma');
 const { requireUser } = require('../middleware/session');
+const { CreateTripSchema, validateAsync } = require('../lib/validation');
+const { sanitizeHtml } = require('../lib/sanitizer');
 
 const FREE_TRIP_LIMIT = 3;
 
@@ -8,7 +10,10 @@ async function checkTripLimit(req, res, next) {
   if (!req.user?.id) return next();
   
   const count = await prisma.trip.count({
-    where: { memberships: { some: { userId: req.user.id } } },
+    where: { 
+      memberships: { some: { userId: req.user.id } },
+      status: { not: 'ARCHIVED' },
+    },
   });
   
   if (count >= FREE_TRIP_LIMIT) {
@@ -44,24 +49,16 @@ router.get('/', requireUser, async (req, res, next) => {
 });
 
 // POST /api/trips
-router.post('/', requireUser, checkTripLimit, async (req, res, next) => {
+router.post('/', requireUser, checkTripLimit, validateAsync(CreateTripSchema), async (req, res, next) => {
   try {
-    const { title, destination, startDate, endDate } = req.body;
-    if (!title?.trim()) return res.status(400).json({ error: 'title is required' });
+    const { title, destination, startDate, endDate } = req.validated;
 
-    let inviteCode;
-    let attempts = 0;
-    do {
-      inviteCode = generateInviteCode();
-      attempts++;
-      if (attempts > 10) throw new Error('Failed to generate unique invite code');
-    } while (await prisma.trip.findUnique({ where: { inviteCode } }));
-
+    // Try to create with a unique invite code (handle race condition)
     const trip = await prisma.trip.create({
       data: {
-        title: title.trim(),
-        destination: destination || 'Tokyo, Japan',
-        inviteCode,
+        title: sanitizeHtml(title.trim()),
+        destination: sanitizeHtml(destination) || 'Tokyo, Japan',
+        inviteCode: generateInviteCode(),
         startDate: startDate ? new Date(startDate) : null,
         endDate: endDate ? new Date(endDate) : null,
         memberships: { create: { userId: req.user.id, role: 'OWNER' } },
@@ -70,6 +67,20 @@ router.post('/', requireUser, checkTripLimit, async (req, res, next) => {
 
     res.status(201).json({ trip, membership: { role: 'OWNER' } });
   } catch (err) {
+    if (err.code === 'P2002') {
+      // Retry with different code on unique constraint violation
+      const trip = await prisma.trip.create({
+        data: {
+          title: sanitizeHtml(title.trim()),
+          destination: sanitizeHtml(destination) || 'Tokyo, Japan',
+          inviteCode: generateInviteCode(),
+          startDate: startDate ? new Date(startDate) : null,
+          endDate: endDate ? new Date(endDate) : null,
+          memberships: { create: { userId: req.user.id, role: 'OWNER' } },
+        },
+      });
+      return res.status(201).json({ trip, membership: { role: 'OWNER' } });
+    }
     next(err);
   }
 });

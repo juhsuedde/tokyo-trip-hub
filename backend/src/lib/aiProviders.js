@@ -15,6 +15,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { logger } = require('./logger');
 
 // ─── Shared vision prompt ─────────────────────────────────────────────────────
 
@@ -47,7 +48,8 @@ function parseVisionResponse(rawText) {
       sentiment: parsed.sentiment || 'NEUTRAL',
     };
   } catch {
-    console.warn('[aiProviders] Failed to parse vision JSON, using defaults. Raw:', rawText.slice(0, 200));
+    const { logger } = require('./logger');
+    logger.warn({ rawText: rawText.slice(0, 200) }, 'Failed to parse vision JSON, using defaults');
     return { ocrText: rawText.slice(0, 500), category: 'MISC', tags: [], sentiment: 'NEUTRAL' };
   }
 }
@@ -202,10 +204,10 @@ class OpenRouterProvider {
         const content = data.choices?.[0]?.message?.content;
         if (!content) throw new Error(`OpenRouter (${model}) returned empty content`);
 
-        console.log(`[aiProviders] OpenRouter used model: ${model}`);
+        logger.info({ model }, 'OpenRouter used model');
         return parseVisionResponse(content);
       } catch (err) {
-        console.warn(`[aiProviders] OpenRouter model ${model} failed: ${err.message}`);
+        logger.warn({ model, error: err.message }, 'OpenRouter model failed');
         lastError = err;
       }
     }
@@ -253,11 +255,11 @@ function selectProvider({ task, env = process.env }) {
 
   if (task === 'transcribe') {
     if (env.GROQ_API_KEY) {
-      console.log('[aiProviders] transcribe → GroqProvider');
+      logger.info({ provider: 'GroqProvider' }, 'transcribe → GroqProvider');
       return new GroqProvider(env.GROQ_API_KEY);
     }
     if (env.OPENAI_API_KEY) {
-      console.log('[aiProviders] transcribe → OpenAIProvider');
+      logger.info({ provider: 'OpenAIProvider' }, 'transcribe → OpenAIProvider');
       return new OpenAIProvider(env.OPENAI_API_KEY);
     }
     throw new Error(
@@ -268,11 +270,11 @@ function selectProvider({ task, env = process.env }) {
 
   if (task === 'vision') {
     if (env.OPENROUTER_API_KEY) {
-      console.log('[aiProviders] vision → OpenRouterProvider');
+      logger.info({ provider: 'OpenRouterProvider' }, 'vision → OpenRouterProvider');
       return new OpenRouterProvider(env.OPENROUTER_API_KEY);
     }
     if (env.OPENAI_API_KEY) {
-      console.log('[aiProviders] vision → OpenAIProvider');
+      logger.info({ provider: 'OpenAIProvider' }, 'vision → OpenAIProvider');
       return new OpenAIProvider(env.OPENAI_API_KEY);
     }
     throw new Error(
@@ -294,7 +296,7 @@ async function withProviderFallback(label, primaryFn, fallbackFn) {
   try {
     return await primaryFn();
   } catch (err) {
-    console.warn(`[aiProviders] ${label} primary failed, trying fallback: ${err.message}`);
+    logger.warn({ label, error: err.message }, 'Primary provider failed, trying fallback');
     return await fallbackFn();
   }
 }
