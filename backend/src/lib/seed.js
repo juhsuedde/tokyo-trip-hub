@@ -3,13 +3,14 @@
  * Run with: npm run seed
  */
 require('dotenv').config();
+const bcrypt = require('bcrypt');
 const { prisma } = require('./prisma');
 
 const USERS = [
-  { name: 'Alex', tempSession: 'demo-session-alex' },
-  { name: 'Yuki', tempSession: 'demo-session-yuki' },
-  { name: 'Kai', tempSession: 'demo-session-kai' },
-  { name: 'Sara', tempSession: 'demo-session-sara' },
+  { name: 'Alex', tempSession: 'demo-session-alex', email: 'alex@demo.com', passwordHash: 'demo123' },
+  { name: 'Yuki', tempSession: 'demo-session-yuki', email: 'yuki@demo.com', passwordHash: 'demo123' },
+  { name: 'Kai', tempSession: 'demo-session-kai', email: 'kai@demo.com', passwordHash: 'demo123' },
+  { name: 'Sara', tempSession: 'demo-session-sara', email: 'sara@demo.com', passwordHash: 'demo123' },
 ];
 
 const ENTRIES = [
@@ -74,10 +75,11 @@ async function seed() {
   // Upsert users
   const users = [];
   for (const u of USERS) {
+    const passwordHash = await bcrypt.hash(u.passwordHash, 12);
     const user = await prisma.user.upsert({
       where: { tempSession: u.tempSession },
-      update: { name: u.name },
-      create: u,
+      update: { name: u.name, email: u.email, passwordHash },
+      create: { name: u.name, tempSession: u.tempSession, email: u.email, passwordHash },
     });
     users.push(user);
     console.log(`  ✓ User: ${user.name} (session: ${user.tempSession})`);

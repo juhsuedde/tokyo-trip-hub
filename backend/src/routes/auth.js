@@ -169,7 +169,21 @@ router.post('/upgrade', requireAuth, async (req, res, next) => {
       return res.status(400).json({ error: 'Invalid tier' });
     }
 
-    // Skip Prisma tier update, keep in sync with JWT only
+    const user = await prisma.user.update({
+      where: { id: req.user.id },
+      data: { tier: 'PREMIUM' },
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user.id,
+        action: 'UPGRADE_TIER',
+        entityType: 'User',
+        entityId: user.id,
+        metadata: { tier: 'PREMIUM' },
+      },
+    });
+
     const token = signToken({
       ...req.user,
       tier: 'PREMIUM',
@@ -177,9 +191,9 @@ router.post('/upgrade', requireAuth, async (req, res, next) => {
 
     res.json({
       user: {
-        id: req.user.id,
-        name: req.user.name,
-        email: req.user.email,
+        id: user.id,
+        name: user.name,
+        email: user.email,
         tier: 'PREMIUM',
       },
       token,
