@@ -60,7 +60,7 @@ function createApp(allowedOrigins) {
 
   const limiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: process.env.NODE_ENV === 'test' ? Infinity : 200,
+    max: process.env.NODE_ENV === 'test' ? Infinity : 300,
     standardHeaders: true,
     legacyHeaders: false,
   });
