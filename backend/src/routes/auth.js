@@ -2,6 +2,7 @@
 const express = require('express');
 const bcrypt = require('bcrypt');
 const { prisma } = require('../lib/prisma');
+const { logger } = require('../lib/logger');
 const { requireAuth, signToken } = require('../middleware/auth');
 const { LoginSchema, RegisterSchema, UpdateProfileSchema, validateAsync } = require('../lib/validation');
 const { issueAccessToken, issueRefreshToken, rotateRefreshToken, revokeAllRefreshTokens, requestPasswordReset, resetPassword } = require('../lib/auth.service');
@@ -181,22 +182,16 @@ router.post('/refresh', async (req, res) => {
 });
 
 // ── POST /api/auth/forgot-password ───────────────────────────────────────
-router.post('/forgot-password', async (req, res) => {
-  const { email } = req.body;
-  if (!email) {
-    return res.status(400).json({ error: 'Email is required' });
-  }
+router.post('/forgot-password', validateAsync(ForgotPasswordSchema), async (req, res) => {
+  const { email } = req.validated;
 
-  await requestPasswordReset(email).catch((err) => console.error('Password reset error:', err));
+  await requestPasswordReset(email).catch((err) => logger.error({ err }, 'Password reset error'));
   res.json({ message: 'If that email is registered, a reset link has been sent.' });
 });
 
 // ── POST /api/auth/reset-password ────────────────────────────────────────
-router.post('/reset-password', async (req, res) => {
-  const { token, password } = req.body;
-  if (!token || !password) {
-    return res.status(400).json({ error: 'Token and password are required' });
-  }
+router.post('/reset-password', validateAsync(ResetPasswordSchema), async (req, res) => {
+  const { token, password } = req.validated;
 
   try {
     await resetPassword(token, password);
@@ -208,6 +203,7 @@ router.post('/reset-password', async (req, res) => {
 });
 
 // ── POST /api/auth/upgrade ───────────────────────────────────────────
+// DEV ONLY: This endpoint allows free self-upgrade. In production, integrate with payment provider.
 router.post('/upgrade', requireAuth, async (req, res, next) => {
   try {
     const { tier } = req.body;
@@ -230,8 +226,9 @@ router.post('/upgrade', requireAuth, async (req, res, next) => {
       },
     });
 
-    const token = signToken({
-      ...req.user,
+    // Issue short-lived access token via proper auth service
+    const accessToken = issueAccessToken({
+      ...user,
       tier: 'PREMIUM',
     });
 
@@ -242,7 +239,7 @@ router.post('/upgrade', requireAuth, async (req, res, next) => {
         email: user.email,
         tier: 'PREMIUM',
       },
-      token,
+      accessToken,
     });
   } catch (err) {
     next(err);

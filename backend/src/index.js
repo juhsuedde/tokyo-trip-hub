@@ -3,18 +3,19 @@
  */
 const http = require('http');
 const { Server } = require('socket.io');
+const jwt = require('jsonwebtoken');
 const { logger } = require('./lib/logger');
 const { createApp } = require('./app');
 const { redisSub } = require('./lib/redis');
+const { ALLOWED_ORIGINS } = require('./config');
 
-const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || 'http://localhost:5173,http://127.0.0.1:5173,http://192.168.0.245:5173')
-  .split(',').map(s => s.trim());
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
-const app = createApp();
+const app = createApp(ALLOWED_ORIGINS);
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: process.env.NODE_ENV === 'production'
+    origin: IS_PRODUCTION
       ? (origin, callback) => {
           if (!origin) return callback(new Error('Origin required'));
           if (ALLOWED_ORIGINS.includes(origin)) return callback(null, origin);
@@ -35,19 +36,21 @@ redisSub.on('message', (channel, message) => {
   try {
     const { tripId, event, payload } = JSON.parse(message);
     io.to(`trip:${tripId}`).emit(event, payload);
-  } catch {}
+  } catch (err) {
+    logger.error({ err, message }, 'Failed to process Redis notification');
+  }
 });
 
 io.use((socket, next) => {
   const token = socket.handshake.auth.token || socket.handshake.headers.authorization?.replace('Bearer ', '');
   if (!token) return next(new Error('Authentication required'));
   try {
-    const jwt = require('jsonwebtoken');
     const payload = jwt.verify(token, process.env.JWT_SECRET);
     socket.user = payload;
     next();
   } catch (err) {
-    next(new Error('Invalid token'));
+    const message = err.name === 'TokenExpiredError' ? 'Token expired' : 'Invalid token';
+    next(new Error(message));
   }
 });
 

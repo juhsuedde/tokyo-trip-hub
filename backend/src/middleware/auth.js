@@ -121,7 +121,7 @@ function requireTripRole(requiredRole) {
 }
 
 /**
- * signToken — create JWT for user
+ * signToken — create JWT for user (short-lived access token)
  */
 function signToken(user) {
   const payload = {
@@ -130,7 +130,7 @@ function signToken(user) {
     name: user.name,
     tier: user.tier || 'FREE',
   };
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: process.env.JWT_ACCESS_EXPIRY || '15m' });
 }
 
 module.exports = {

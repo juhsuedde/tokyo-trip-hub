@@ -13,16 +13,13 @@ const { logger, expressMiddleware } = require('./lib/logger');
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
+const multer = require('multer');
 const rateLimit = require('express-rate-limit');
 const cookieParser = require('cookie-parser');
-const fileUpload = require('express-fileupload');
 const path = require('path');
 const fs = require('fs');
 
-const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || 'http://localhost:5173,http://127.0.0.1:5173,http://192.168.0.245:5173')
-  .split(',').map(s => s.trim());
-
-const { optionalAuth } = require('./middleware/session');
+const { optionalAuth } = require('./middleware/auth');
 const { enforceExportFormat } = require('./middleware/subscription');
 const tripsRouter = require('./routes/trips');
 const entriesRouter = require('./routes/entries');
@@ -30,19 +27,26 @@ const usersRouter = require('./routes/users');
 const exportRouter = require('./routes/export');
 const authRouter = require('./routes/auth');
 
-function createApp(io) {
+function createApp(allowedOrigins) {
   const app = express();
+  
+  const origins = allowedOrigins || [
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+  ];
 
-  if (io) app.set('io', io);
+  // In development, allow any origin for easier mobile testing
+  // In production, use strict origin allowlist
+  const corsOrigin = process.env.NODE_ENV === 'production'
+    ? (origin, callback) => {
+        if (!origin) return callback(new Error('Origin required'));
+        if (origins.includes(origin)) return callback(null, origin);
+        return callback(new Error('Not allowed by CORS'));
+      }
+    : true;
 
   app.use(cors({
-    origin: process.env.NODE_ENV === 'production' 
-      ? (origin, callback) => {
-          if (!origin) return callback(new Error('Origin required'));
-          if (ALLOWED_ORIGINS.includes(origin)) return callback(null, origin);
-          return callback(new Error('Not allowed by CORS'));
-        }
-      : true,
+    origin: corsOrigin,
     credentials: true,
   }));
 
@@ -65,6 +69,10 @@ function createApp(io) {
     max: 20,
     standardHeaders: true,
     legacyHeaders: false,
+    keyGenerator: (req) => {
+      // Use user ID if authenticated, otherwise fall back to IP
+      return req.user?.id || req.ip;
+    },
   });
 
   app.use('/api', limiter);
@@ -75,6 +83,12 @@ function createApp(io) {
 
 const uploadDir = process.env.UPLOAD_DIR || path.join(__dirname, '..', 'uploads');
   if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+
+  const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 50 * 1024 * 1024 },
+  });
+  app.use(upload.any());
 
   app.use('/uploads', uploadLimiter, express.static(uploadDir, {
     setHeaders: (res, _path) => {
@@ -104,7 +118,15 @@ const uploadDir = process.env.UPLOAD_DIR || path.join(__dirname, '..', 'uploads'
   app.use('/api/admin', adminRouter);
 
   app.get('/api/health', async (req, res) => {
-    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      const { redis } = require('./lib/redis');
+      await redis.ping();
+      res.json({ status: 'ok', timestamp: new Date().toISOString() });
+    } catch (err) {
+      logger.error({ err }, 'Health check failed');
+      res.status(503).json({ status: 'unhealthy', error: err.message });
+    }
   });
 
   app.use((err, req, res, next) => {

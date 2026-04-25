@@ -11,7 +11,11 @@ node_modules/
 # Uploads
 uploads/
 */uploads/*
-!*/uploads/.gitkeep
+ !*/uploads/.gitkeep
+
+# Exports (generated)
+exports/
+ */exports/*
 
 # Build / Dist
 dist/

@@ -48,6 +48,15 @@ const UpdateEntrySchema = z.object({
   tags: z.array(z.string()).optional(),
 });
 
+const ForgotPasswordSchema = z.object({
+  email: z.string().email('Invalid email format'),
+});
+
+const ResetPasswordSchema = z.object({
+  token: z.string().min(1, 'Token is required'),
+  password: z.string().min(6, 'Password must be at least 6 characters'),
+});
+
 const CreateReactionSchema = z.object({
   emoji: z.string().max(10),
 });
@@ -93,6 +102,8 @@ module.exports = {
   CreateReactionSchema,
   CreateCommentSchema,
   UpdateProfileSchema,
+  ForgotPasswordSchema,
+  ResetPasswordSchema,
   validate,
   validateAsync,
 };

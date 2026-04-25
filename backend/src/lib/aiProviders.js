@@ -17,6 +17,12 @@ const fs = require('fs');
 const path = require('path');
 const { logger } = require('./logger');
 
+// Configurable AI models via env vars
+const AI_MODELS = {
+  transcribe: process.env.AI_TRANSCRIBE_MODEL || 'whisper-1',
+  vision: process.env.AI_VISION_MODEL || 'gpt-4o',
+};
+
 // ─── Shared vision prompt ─────────────────────────────────────────────────────
 
 const VISION_PROMPT = `You are analyzing a travel photo. Do ALL of the following:
@@ -84,7 +90,7 @@ class OpenAIProvider {
   async analyzeImage(imageUrl) {
     const openai = this._getClient();
     const response = await openai.chat.completions.create({
-      model: 'gpt-4o',
+      model: AI_MODELS.vision,
       messages: [
         {
           role: 'user',

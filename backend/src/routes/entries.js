@@ -11,6 +11,7 @@ const express = require('express');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const { prisma } = require('../lib/prisma');
+const { logger } = require('../lib/logger');
 const { attachUser } = require('../middleware/session');
 let aiQueue;
 if (process.env.NODE_ENV !== 'test') {
@@ -29,7 +30,7 @@ let sharp = null;
 try {
   sharp = require('sharp');
 } catch (e) {
-  console.warn('sharp not available - MIME validation will use extension only');
+  logger.warn('sharp not available - MIME validation will use extension only');
 }
 
 const router = express.Router();
@@ -49,12 +50,20 @@ const ALLOWED_EXTENSIONS = {
   VOICE: ['.mp3', '.wav', '.webm', '.ogg'],
 };
 
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+
 async function validateFileMime(file, type) {
   const allowedExts = ALLOWED_EXTENSIONS[type];
   if (!allowedExts) return false;
 
   const ext = path.extname(file.name)?.toLowerCase();
   if (!ext || !allowedExts.includes(ext)) return false;
+
+  // Check file size
+  if (file.size > MAX_FILE_SIZE) {
+    logger.warn({ size: file.size, max: MAX_FILE_SIZE }, 'File too large');
+    return false;
+  }
 
   if (!sharp) return true;
 
@@ -161,11 +170,11 @@ router.delete('/:id', async (req, res, next) => {
     if (!entry) return res.status(404).json({ error: 'Entry not found' });
     if (entry.userId !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
 
-    if (entry.contentUrl) {
-      await deleteFile(entry.contentUrl);
-    }
-
-    await prisma.entry.delete({ where: { id: req.params.id } });
+    // Soft delete instead of hard delete
+    await prisma.entry.update({
+      where: { id: req.params.id },
+      data: { deletedAt: new Date() },
+    });
 
     const io = req.app.get('io');
     if (io) io.to(`trip:${entry.tripId}`).emit('entry-deleted', { entryId: entry.id });

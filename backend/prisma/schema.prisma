@@ -113,6 +113,8 @@ model Entry {
   category      Category?
   sentiment     Sentiment?
   tags          String[]    @default([])
+  // Soft delete
+  deletedAt     DateTime?
   // Timestamps
   capturedAt    DateTime    @default(now()) // when user captured it (may differ from createdAt if offline)
   createdAt     DateTime    @default(now())

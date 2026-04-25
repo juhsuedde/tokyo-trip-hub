@@ -106,7 +106,7 @@ router.get('/:id/feed', requireUser, async (req, res, next) => {
     if (!membership) return res.status(403).json({ error: 'Not a member' });
 
     const entries = await prisma.entry.findMany({
-      where: { tripId: req.params.id },
+      where: { tripId: req.params.id, deletedAt: null },
       orderBy: { createdAt: 'desc' },
       take: limit + 1,
       ...(cursor && { cursor: { id: cursor }, skip: 1 }),
