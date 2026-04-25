@@ -121,8 +121,8 @@ const uploadDir = process.env.UPLOAD_DIR || path.join(__dirname, '..', 'uploads'
   app.get('/api/health', async (req, res) => {
     try {
       await prisma.$queryRaw`SELECT 1`;
-      const { redis } = require('./lib/redis');
-      await redis.ping();
+      const { redisClient } = require('./lib/redis');
+      await redisClient.ping();
       res.json({ status: 'ok', timestamp: new Date().toISOString() });
     } catch (err) {
       logger.error({ err }, 'Health check failed');
