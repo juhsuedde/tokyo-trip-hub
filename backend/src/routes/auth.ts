@@ -4,7 +4,7 @@ const bcrypt = require('bcrypt');
 const { prisma } = require('../lib/prisma');
 const { logger } = require('../lib/logger');
 const { requireAuth, signToken } = require('../middleware/auth');
-const { LoginSchema, RegisterSchema, UpdateProfileSchema, validateAsync } = require('../lib/validation');
+const { LoginSchema, RegisterSchema, UpdateProfileSchema, validateAsync, ForgotPasswordSchema, ResetPasswordSchema } = require('../lib/validation');
 const { issueAccessToken, issueRefreshToken, rotateRefreshToken, revokeAllRefreshTokens, requestPasswordReset, resetPassword } = require('../lib/auth.service');
 
 const router = express.Router();

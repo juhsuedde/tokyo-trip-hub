@@ -1,13 +1,15 @@
-// backend/src/middleware/auth.js
-const jwt = require('jsonwebtoken');
-const { prisma } = require('../lib/prisma');
+import jwt from 'jsonwebtoken';
+import { Response, NextFunction, Request } from 'express';
+import { prisma } from '../lib/prisma';
+import { logger } from '../lib/logger';
+import type { RequestUser, Role } from '../types';
 
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {
   throw new Error('JWT_SECRET env var is required');
 }
 
-function extractToken(req) {
+export function extractToken(req: Request): string | null {
   // Try Bearer token first
   const auth = req.headers.authorization;
   if (auth && auth.startsWith('Bearer ')) {
@@ -15,10 +17,10 @@ function extractToken(req) {
   }
   // Try old X-Session-Token header (backward compat)
   if (req.headers['x-session-token']) {
-    return req.headers['x-session-token'];
+    return req.headers['x-session-token'] as string;
   }
   // Try cookie
-  if (req.cookies && req.cookies.token) {
+  if (req.cookies?.token) {
     return req.cookies.token;
   }
   return null;
@@ -28,27 +30,27 @@ function extractToken(req) {
  * requireAuth — hard gate, returns 401 if no valid token.
  * Attaches req.user = { id, email, name, tier }
  */
-async function requireAuth(req, res, next) {
+export async function requireAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
   const token = extractToken(req);
   if (!token) {
     return res.status(401).json({ error: 'Authentication required' });
   }
 
   try {
-    const payload = jwt.verify(token, JWT_SECRET);
+    const payload = jwt.verify(token, JWT_SECRET) as jwt.JwtPayload;
 
     // Attach user object from JWT claims
     req.user = {
-      id: payload.sub,
-      email: payload.email,
-      name: payload.name,
-      tier: payload.tier || 'FREE',
-      isAdmin: payload.isAdmin || false,
+      id: payload.sub as string,
+      email: payload.email as string,
+      name: payload.name as string,
+      tier: (payload.tier as RequestUser['tier']) || 'FREE',
+      isAdmin: payload.isAdmin as boolean || false,
     };
 
     next();
   } catch (err) {
-    if (err.name === 'TokenExpiredError') {
+    if (err instanceof jwt.TokenExpiredError) {
       return res.status(401).json({ error: 'Token expired' });
     }
     return res.status(401).json({ error: 'Invalid token' });
@@ -58,21 +60,21 @@ async function requireAuth(req, res, next) {
 /**
  * optionalAuth — soft gate, populates req.user if token present but never rejects.
  */
-async function optionalAuth(req, res, next) {
+export async function optionalAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
   const token = extractToken(req);
   if (!token) {
     return next();
   }
 
   try {
-    const payload = jwt.verify(token, JWT_SECRET);
+    const payload = jwt.verify(token, JWT_SECRET) as jwt.JwtPayload;
     req.user = {
-      id: payload.sub,
-      email: payload.email,
-      name: payload.name,
-      tier: payload.tier || 'FREE',
+      id: payload.sub as string,
+      email: payload.email as string,
+      name: payload.name as string,
+      tier: (payload.tier as RequestUser['tier']) || 'FREE',
     };
-  } catch (err) {
+  } catch {
     // Invalid token - treat as unauthenticated, don't reject
   }
   next();
@@ -81,8 +83,8 @@ async function optionalAuth(req, res, next) {
 /**
  * requireTripRole(role) — check user has required role for trip
  */
-function requireTripRole(requiredRole) {
-  return async (req, res, next) => {
+export function requireTripRole(requiredRole: Role) {
+  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     if (!req.user) {
       return res.status(401).json({ error: 'Authentication required' });
     }
@@ -106,14 +108,13 @@ function requireTripRole(requiredRole) {
         return res.status(403).json({ error: 'Not a member of this trip' });
       }
 
-      const roleHierarchy = { MEMBER: 0, OWNER: 1 };
+      const roleHierarchy: Record<Role, number> = { MEMBER: 0, OWNER: 1 };
       if (roleHierarchy[membership.role] < roleHierarchy[requiredRole]) {
         return res.status(403).json({ error: `Requires ${requiredRole} role` });
       }
 
       next();
     } catch (err) {
-      const { logger } = require('../lib/logger');
       logger.error({ err }, '[requireTripRole] error');
       res.status(500).json({ error: 'Internal error' });
     }
@@ -123,7 +124,7 @@ function requireTripRole(requiredRole) {
 /**
  * signToken — create JWT for user (short-lived access token)
  */
-function signToken(user) {
+export function signToken(user: Partial<RequestUser>): string {
   const payload = {
     sub: user.id,
     email: user.email,
@@ -133,10 +134,4 @@ function signToken(user) {
   return jwt.sign(payload, JWT_SECRET, { expiresIn: process.env.JWT_ACCESS_EXPIRY || '15m' });
 }
 
-module.exports = {
-  requireAuth,
-  optionalAuth,
-  requireTripRole,
-  signToken,
-  extractToken,
-};
+export {};

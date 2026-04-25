@@ -1,4 +1,6 @@
-const pino = require('pino');
+import pino from 'pino';
+import { Request, Response, NextFunction } from 'express';
+import { randomUUID } from 'crypto';
 
 const logger = pino({
   level: process.env.LOG_LEVEL || 'info',
@@ -8,16 +10,16 @@ const logger = pino({
   } : undefined,
 });
 
-function createChildLogger(baseLogger, correlationId) {
+function createChildLogger(baseLogger: pino.Logger, correlationId: string): pino.Logger {
   return baseLogger.child({ correlationId });
 }
 
-function getCorrelationId(req) {
-  return req.headers['x-correlation-id'] || req.headers['x-request-id'] || null;
+function getCorrelationId(req: Request): string | null {
+  return req.headers['x-correlation-id'] as string || req.headers['x-request-id'] as string || null;
 }
 
-function expressMiddleware(req, res, next) {
-  const correlationId = getCorrelationId(req) || require('crypto').randomUUID();
+function expressMiddleware(req: Request, res: Response, next: NextFunction): void {
+  const correlationId = getCorrelationId(req) || randomUUID();
   req.correlationId = correlationId;
   res.setHeader('X-Correlation-ID', correlationId);
   
@@ -38,4 +40,4 @@ function expressMiddleware(req, res, next) {
   next();
 }
 
-module.exports = { logger, createChildLogger, expressMiddleware };
+export { logger, createChildLogger, expressMiddleware };

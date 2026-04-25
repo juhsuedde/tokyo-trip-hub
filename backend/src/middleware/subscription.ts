@@ -1,9 +1,19 @@
-'use strict';
+import { prisma } from '../lib/prisma';
+import { logger } from '../lib/logger';
+import type { Request, Response, NextFunction } from 'express';
+import type { RequestUser, Tier } from '../types';
 
-const { prisma } = require('../lib/prisma');
-const { logger } = require('../lib/logger');
+interface TierLimits {
+  maxTrips: number | null;
+  maxEntriesPerTrip: number | typeof Infinity;
+  allowedExports: string[];
+  unlimitedRetention: boolean;
+  customDomain: boolean;
+  whiteLabel: boolean;
+  apiAccess: boolean;
+}
 
-const TIER_LIMITS = {
+export const TIER_LIMITS: Record<Tier, TierLimits> = {
   FREE: {
     maxTrips: 3,
     maxEntriesPerTrip: 50,
@@ -33,7 +43,7 @@ const TIER_LIMITS = {
   },
 };
 
-async function checkTripLimit(req, res, next) {
+export async function checkTripLimit(req: Request, res: Response, next: NextFunction): Promise<void> {
   if (!req.user) return res.status(401).json({ error: 'Authentication required' });
   const { id: userId, tier } = req.user;
   const limits = TIER_LIMITS[tier];
@@ -61,7 +71,7 @@ async function checkTripLimit(req, res, next) {
   }
 }
 
-async function checkEntryLimit(req, res, next) {
+export async function checkEntryLimit(req: Request, res: Response, next: NextFunction): Promise<void> {
   if (!req.user) return res.status(401).json({ error: 'Authentication required' });
   const { tier } = req.user;
   const { id: tripId, tripId: tripIdAlt } = req.params;
@@ -91,9 +101,9 @@ async function checkEntryLimit(req, res, next) {
   }
 }
 
-function checkExportFormat(req, res, next) {
-  const { tier } = req.user;
-  const format = (req.query.format || req.body.format || '').toLowerCase();
+export function checkExportFormat(req: Request, res: Response, next: NextFunction): void {
+  const { tier } = req.user!;
+  const format = (req.query.format as string || req.body.format as string || '').toLowerCase();
   const limits = TIER_LIMITS[tier];
 
   if (!format) {
@@ -111,18 +121,18 @@ function checkExportFormat(req, res, next) {
   next();
 }
 
-function requireTier(minimumTier) {
-  const tierOrder = { FREE: 0, PREMIUM: 1, PRO: 2 };
-  return (req, res, next) => {
-    const userRank = tierOrder[req.user.tier] ?? 0;
+export function requireTier(minimumTier: Tier) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    const tierOrder: Record<Tier, number> = { FREE: 0, PREMIUM: 1, PRO: 2 };
+    const userRank = tierOrder[req.user?.tier as Tier] ?? 0;
     const requiredRank = tierOrder[minimumTier] ?? 0;
 
     if (userRank < requiredRank) {
       return res.status(403).json({
-        error: `This feature requires ${minimumTier} or higher. You are on ${req.user.tier}.`,
+        error: `This feature requires ${minimumTier} or higher. You are on ${req.user?.tier}.`,
         code: 'TIER_REQUIRED',
         required: minimumTier,
-        current: req.user.tier,
+        current: req.user?.tier,
       });
     }
 
@@ -130,11 +140,6 @@ function requireTier(minimumTier) {
   };
 }
 
-module.exports = {
-  TIER_LIMITS,
-  checkTripLimit,
-  checkEntryLimit,
-  checkExportFormat,
-  enforceExportFormat: checkExportFormat,
-  requireTier,
-};
+export const enforceExportFormat = checkExportFormat;
+
+export {};

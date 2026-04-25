@@ -1,17 +1,27 @@
-const path = require('path');
-const fs = require('fs');
-const { logger } = require('./logger');
+import path from 'path';
+import fs from 'fs';
+import { logger } from './logger';
 
-const STORAGE_TYPE = process.env.STORAGE_TYPE || 'local';
-const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, '..', '..', 'uploads');
+export const STORAGE_TYPE = process.env.STORAGE_TYPE || 'local';
+export const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, '..', '..', 'uploads');
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3001';
 
-let s3Client = null;
-let s3Bucket = null;
+interface UploadedFile {
+  name: string;
+  tempFilePath: string;
+  size: number;
+  mimetype?: string;
+}
 
-async function getS3Client() {
+type StorageType = 'local' | 's3' | 'cloudinary';
+
+let s3Client: unknown = null;
+let s3Bucket: string | null = null;
+
+async function getS3Client(): Promise<unknown> {
   if (!s3Client && STORAGE_TYPE === 's3') {
-    const { S3Client } = require('@aws-sdk/client-s3');
+    // Dynamic import for AWS SDK
+    const { S3Client } = await import('@aws-sdk/client-s3');
     s3Client = new S3Client({
       region: process.env.AWS_REGION || 'us-east-1',
       credentials: process.env.AWS_ACCESS_KEY_ID ? {
@@ -24,8 +34,8 @@ async function getS3Client() {
   return s3Client;
 }
 
-async function uploadToS3(file, key, contentType) {
-  const { Upload } = require('@aws-sdk/lib-storage');
+async function uploadToS3(file: UploadedFile, key: string, contentType: string): Promise<string> {
+  const { Upload } = await import('@aws-sdk/lib-storage');
   const client = await getS3Client();
   const upload = new Upload({
     client,
@@ -40,23 +50,23 @@ async function uploadToS3(file, key, contentType) {
   return `https://${s3Bucket}.s3.${process.env.AWS_REGION || 'us-east-1'}.amazonaws.com/${key}`;
 }
 
-let cloudinary = null;
+let cloudinary: unknown = null;
 
-async function getCloudinary() {
+async function getCloudinary(): Promise<unknown> {
   if (!cloudinary && STORAGE_TYPE === 'cloudinary') {
-    const { v2: cloudinarySdk } = require('cloudinary');
+    const { v2: cloudinarySdk } = await import('cloudinary');
     cloudinary = cloudinarySdk.config({
       cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
       api_key: process.env.CLOUDINARY_API_KEY,
       api_secret: process.env.CLOUDINARY_API_SECRET,
     });
-    cloudinarySdk.uploader;
+    return cloudinary;
   }
   return cloudinary;
 }
 
-async function uploadToCloudinary(file, folder) {
-  const { v2: cloudinarySdk } = require('cloudinary');
+async function uploadToCloudinary(file: UploadedFile, folder: string): Promise<string> {
+  const { v2: cloudinarySdk } = await import('cloudinary');
   cloudinarySdk.config({
     cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
     api_key: process.env.CLOUDINARY_API_KEY,
@@ -71,12 +81,12 @@ async function uploadToCloudinary(file, folder) {
   return result.secure_url;
 }
 
-async function saveFile(file, type) {
+export async function saveFile(file: UploadedFile, type: string): Promise<string> {
   const ext = path.extname(file.name).toLowerCase();
   const filename = `${type.toLowerCase()}_${Date.now()}_${Math.random().toString(36).slice(2)}${ext}`;
   
   if (STORAGE_TYPE === 's3') {
-    const mimeTypes = {
+    const mimeTypes: Record<string, string> = {
       PHOTO: 'image/jpeg',
       VIDEO: 'video/mp4',
       VOICE: 'audio/mpeg',
@@ -104,14 +114,15 @@ async function saveFile(file, type) {
   return `/uploads/${filename}`;
 }
 
-async function deleteFile(url) {
+export async function deleteFile(url: string | null | undefined): Promise<void> {
   if (!url) return;
   
   if (STORAGE_TYPE === 's3' && url.includes('amazonaws.com')) {
-    const { DeleteObjectCommand } = require('@aws-sdk/client-s3');
+    const { DeleteObjectCommand } = await import('@aws-sdk/client-s3');
     const client = await getS3Client();
     const key = url.split('.s3.')[1]?.split('/').slice(1).join('/');
     if (key) {
+      // @ts-expect-error - client is dynamically typed
       await client.send(new DeleteObjectCommand({ Bucket: s3Bucket, Key: key }));
       logger.info({ key }, 'File deleted from S3');
     }
@@ -119,7 +130,7 @@ async function deleteFile(url) {
   }
 
   if (STORAGE_TYPE === 'cloudinary' && url.includes('cloudinary.com')) {
-    const { v2: cloudinarySdk } = require('cloudinary');
+    const { v2: cloudinarySdk } = await import('cloudinary');
     cloudinarySdk.config({
       cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
       api_key: process.env.CLOUDINARY_API_KEY,
@@ -141,4 +152,4 @@ async function deleteFile(url) {
   }
 }
 
-module.exports = { saveFile, deleteFile, STORAGE_TYPE };
+export { STORAGE_TYPE };
