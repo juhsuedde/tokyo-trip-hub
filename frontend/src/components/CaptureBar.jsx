@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react';
 import { api } from '../lib/api';
+import { getLocation } from '../lib/media';
 
 /**
  * CaptureBar — text, photo, and voice entry creation.
@@ -26,7 +27,12 @@ export default function CaptureBar({ tripId, onEntryCreated }) {
     if (!text.trim() || submitting) return;
     setSubmitting(true);
     try {
-      const entry = await api.createTextEntry(tripId, { type: 'TEXT', rawText: text.trim() });
+      const loc = await getLocation();
+      const entry = await api.createTextEntry(tripId, { 
+        type: 'TEXT', 
+        rawText: text.trim(),
+        ...(loc && { latitude: String(loc.latitude), longitude: String(loc.longitude) })
+      });
       setText('');
       onEntryCreated?.(entry);
     } catch (err) {
@@ -42,9 +48,14 @@ export default function CaptureBar({ tripId, onEntryCreated }) {
     if (!file) return;
     setSubmitting(true);
     try {
+      const loc = await getLocation();
       const fd = new FormData();
       fd.append('file', file);
       fd.append('type', 'PHOTO');
+      if (loc) {
+        fd.append('latitude', String(loc.latitude));
+        fd.append('longitude', String(loc.longitude));
+      }
       const entry = await api.createEntry(tripId, fd);
       onEntryCreated?.(entry);
     } catch (err) {
@@ -96,11 +107,16 @@ export default function CaptureBar({ tripId, onEntryCreated }) {
   async function uploadVoice(blob, mimeType) {
     setSubmitting(true);
     try {
+      const loc = await getLocation();
       const ext = mimeType.includes('mp4') ? 'm4a' : 'webm';
       const file = new File([blob], `voice-${Date.now()}.${ext}`, { type: mimeType });
       const fd = new FormData();
       fd.append('file', file);
       fd.append('type', 'VOICE');
+      if (loc) {
+        fd.append('latitude', String(loc.latitude));
+        fd.append('longitude', String(loc.longitude));
+      }
       const entry = await api.createEntry(tripId, fd);
       onEntryCreated?.(entry);
     } catch (err) {
