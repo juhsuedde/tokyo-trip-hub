@@ -38,7 +38,7 @@ function createApp(allowedOrigins?: string[]) {
   ];
 
   const corsOrigin = process.env.NODE_ENV === 'production'
-    ? (origin: string | undefined, callback: (err: Error | null, origin?: string) => void) => {
+    ? (origin: string | undefined, callback: (err: Error | null, origin?: string | boolean) => void) => {
         if (!origin) return callback(null, true);  // Allow mobile apps, health checks
         if (origins.includes(origin)) return callback(null, origin);
         return callback(new Error('Not allowed by CORS'));

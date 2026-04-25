@@ -386,23 +386,35 @@ router.post('/:id/duplicate', requireUser, async (req, res, next) => {
       return res.status(404).json({ error: 'Trip not found' });
     }
 
-    const newTrip = await prisma.trip.create({
-      data: {
-        title: `${original.title} (Copy)`,
-        destination: original.destination,
-        startDate: original.startDate,
-        endDate: original.endDate,
-        ownerId: req.user!.id,
-        status: 'ACTIVE',
-        inviteCode: generateInviteCode(),
-      },
-    });
+    const data: { title: string; destination: string; startDate: Date | null; endDate: Date | null; ownerId: string; status: 'ACTIVE' } = {
+      title: `${original.title} (Copy)`,
+      destination: original.destination,
+      startDate: original.startDate,
+      endDate: original.endDate,
+      ownerId: req.user!.id,
+      status: 'ACTIVE',
+    };
 
-    await prisma.tripMembership.create({
-      data: { userId: req.user!.id, tripId: newTrip.id, role: 'OWNER' },
-    });
+    const MAX_ATTEMPTS = 3;
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      try {
+        const newTrip = await prisma.trip.create({
+          data: { ...data, inviteCode: generateInviteCode() },
+        });
 
-    res.status(201).json(newTrip);
+        await prisma.tripMembership.create({
+          data: { userId: req.user!.id, tripId: newTrip.id, role: 'OWNER' },
+        });
+
+        return res.status(201).json(newTrip);
+      } catch (err) {
+        if ((err as any).code === 'P2002' && attempt < MAX_ATTEMPTS - 1) continue;
+        if ((err as any).code === 'P2002') {
+          return res.status(503).json({ error: 'Could not generate a unique invite code. Please try again.' });
+        }
+        return next(err);
+      }
+    }
   } catch (err) {
     next(err);
   }
