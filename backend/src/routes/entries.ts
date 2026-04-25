@@ -7,6 +7,8 @@
  *  - New GET /:id/status endpoint
  */
 
+import type { Request, Response } from 'express';
+
 const express = require('express');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
@@ -92,8 +94,18 @@ async function validateFileMime(file, type) {
   }
 }
 
+interface CreateEntryBody {
+  type?: string;
+  rawText?: string;
+  latitude?: string;
+  longitude?: string;
+  address?: string;
+  category?: string;
+  sentiment?: string;
+}
+
 // ── POST /api/entries/trips/:tripId/entries ────────────────────────────────────
-router.post('/trips/:tripId/entries', checkEntryLimit, async (req, res, next) => {
+router.post('/trips/:tripId/entries', checkEntryLimit, async (req: Request<{ tripId: string }, {}, CreateEntryBody>, res: Response, next) => {
   try {
     const { tripId } = req.params;
     const userId = req.user.id;

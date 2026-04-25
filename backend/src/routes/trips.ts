@@ -275,8 +275,8 @@ router.patch('/:id', requireUser, validateAsync(UpdateTripSchema), async (req, r
       return res.status(403).json({ error: 'Only owners can update trips' });
     }
 
-    const { title, destination, startDate, endDate, status } = req.validated;
-    const data = {};
+    const { title, destination, startDate, endDate, status } = req.validated as { title?: string; destination?: string; startDate?: string; endDate?: string; status?: 'ACTIVE' | 'ENDED' | 'ARCHIVED' };
+    const data: { title?: string; destination?: string; startDate?: Date | null; endDate?: Date | null; status?: 'ACTIVE' | 'ENDED' | 'ARCHIVED' } = {};
     if (title !== undefined) data.title = sanitizeHtml(title.trim());
     if (destination !== undefined) data.destination = sanitizeHtml(destination);
     if (startDate !== undefined) data.startDate = startDate ? new Date(startDate) : null;

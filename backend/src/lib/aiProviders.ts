@@ -63,10 +63,12 @@ function parseVisionResponse(rawText) {
 // ─── OpenAI Provider ──────────────────────────────────────────────────────────
 
 class OpenAIProvider {
-  constructor(apiKey) {
+  apiKey: string;
+  _client: any;
+
+  constructor(apiKey: string) {
     if (!apiKey) throw new Error('OpenAIProvider requires OPENAI_API_KEY');
     this.apiKey = apiKey;
-    // Lazy-load openai SDK so missing dep doesn't crash if not used
     this._client = null;
   }
 
@@ -109,7 +111,10 @@ class OpenAIProvider {
 // ─── Groq Provider (audio only) ──────────────────────────────────────────────
 
 class GroqProvider {
-  constructor(apiKey) {
+  apiKey: string;
+  baseUrl: string;
+
+  constructor(apiKey: string) {
     if (!apiKey) throw new Error('GroqProvider requires GROQ_API_KEY');
     this.apiKey = apiKey;
     this.baseUrl = 'https://api.groq.com/openai/v1';
