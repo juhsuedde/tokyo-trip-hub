@@ -1,8 +1,8 @@
-import he from 'html-entities';
+import { encode } from 'html-entities';
 
 function sanitizeHtml(str: string | undefined | null): string | undefined | null {
   if (typeof str !== 'string') return str;
-  return he.encode(str);
+  return encode(str);
 }
 
 function sanitizeForMarkdown(str: string | undefined | null): string | undefined | null {
