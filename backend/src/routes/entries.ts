@@ -5,7 +5,6 @@ import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { prisma } from '../lib/prisma';
 import { logger } from '../lib/logger';
-import { attachUser } from '../middleware/session';
 import { aiQueue } from '../queues/aiQueue';
 import { CreateEntrySchema, CreateReactionSchema, CreateCommentSchema, UpdateEntrySchema, validateAsync } from '../lib/validation';
 import { saveFile, deleteFile } from '../lib/storage';
@@ -20,7 +19,6 @@ try {
 }
 
 const router = Router();
-router.use(attachUser);
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3001';
 
