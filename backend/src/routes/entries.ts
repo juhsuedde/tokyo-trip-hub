@@ -1,41 +1,25 @@
-/**
- * backend/src/routes/entries.js  (Phase 2 replacement)
- *
- * Changes from Phase 1:
- *  - After creating a VOICE entry → enqueue transcribe-audio job
- *  - After creating a PHOTO entry → enqueue process-image-ocr job
- *  - New GET /:id/status endpoint
- */
-
 import type { Request, Response } from 'express';
+import type { EntryType, Category } from '@prisma/client';
+import { Router } from 'express';
+import path from 'path';
+import { v4 as uuidv4 } from 'uuid';
+import { prisma } from '../lib/prisma';
+import { logger } from '../lib/logger';
+import { attachUser } from '../middleware/session';
+import { aiQueue } from '../queues/aiQueue';
+import { CreateEntrySchema, CreateReactionSchema, CreateCommentSchema, UpdateEntrySchema, validateAsync } from '../lib/validation';
+import { saveFile, deleteFile } from '../lib/storage';
+import { sanitizeHtml } from '../lib/sanitizer';
+import { checkEntryLimit } from '../middleware/subscription';
 
-const express = require('express');
-const path = require('path');
-const { v4: uuidv4 } = require('uuid');
-const { prisma } = require('../lib/prisma');
-const { logger } = require('../lib/logger');
-const { attachUser } = require('../middleware/session');
-let aiQueue;
-if (process.env.NODE_ENV !== 'test') {
-  try {
-    ({ aiQueue } = require('../queues/aiQueue'));
-  } catch {
-    // Bull/Redis unavailable — AI jobs will be skipped
-  }
-}
-const { CreateEntrySchema, CreateReactionSchema, CreateCommentSchema, UpdateEntrySchema, validateAsync } = require('../lib/validation');
-const { saveFile, deleteFile } = require('../lib/storage');
-const { sanitizeHtml } = require('../lib/sanitizer');
-const { checkEntryLimit } = require('../middleware/subscription');
-
-let sharp = null;
+let sharp: any = null;
 try {
   sharp = require('sharp');
-} catch (e) {
+} catch {
   logger.warn('sharp not available - MIME validation will use extension only');
 }
 
-const router = express.Router();
+const router = Router();
 router.use(attachUser);
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3001';
@@ -52,16 +36,15 @@ const ALLOWED_EXTENSIONS = {
   VOICE: ['.mp3', '.wav', '.webm', '.ogg'],
 };
 
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
-async function validateFileMime(file, type) {
-  const allowedExts = ALLOWED_EXTENSIONS[type];
+async function validateFileMime(file: any, type: string) {
+  const allowedExts = (ALLOWED_EXTENSIONS as Record<string, string[]>)[type];
   if (!allowedExts) return false;
 
   const ext = path.extname(file.name)?.toLowerCase();
   if (!ext || !allowedExts.includes(ext)) return false;
 
-  // Check file size
   if (file.size > MAX_FILE_SIZE) {
     logger.warn({ size: file.size, max: MAX_FILE_SIZE }, 'File too large');
     return false;
@@ -73,7 +56,7 @@ async function validateFileMime(file, type) {
     const metadata = await sharp(file.tempFilePath).metadata();
     if (!metadata?.format) return false;
 
-    const formatToMime = {
+    const formatToMime: Record<string, string> = {
       jpeg: 'image/jpeg',
       png: 'image/png',
       webp: 'image/webp',
@@ -87,7 +70,7 @@ async function validateFileMime(file, type) {
     };
 
     const detectedMime = formatToMime[metadata.format];
-    const allowedMimes = ALLOWED_MIME_TYPES[type];
+    const allowedMimes = (ALLOWED_MIME_TYPES as Record<string, string[]>)[type];
     return allowedMimes.includes(detectedMime);
   } catch {
     return false;
@@ -108,29 +91,29 @@ interface CreateEntryBody {
 router.post('/trips/:tripId/entries', checkEntryLimit, async (req: Request<{ tripId: string }, {}, CreateEntryBody>, res: Response, next) => {
   try {
     const { tripId } = req.params;
-    const userId = req.user.id;
+    const userId = req.user!.id;
 
-    // Verify membership
     const membership = await prisma.tripMembership.findUnique({
       where: { userId_tripId: { userId, tripId } },
     });
     if (!membership) return res.status(403).json({ error: 'Not a member of this trip' });
 
     let contentUrl = null;
-    const type = (req.body.type || req.files?.file ? req.body.type : 'TEXT').toUpperCase();
+    const files = req.files as Record<string, any> | undefined;
+    const type = ((req.body.type || files?.file) ? req.body.type || 'PHOTO' : 'TEXT').toUpperCase();
 
-    if (req.files?.file) {
-      if (!(await validateFileMime(req.files.file, type))) {
+    if (files?.file) {
+      if (!(await validateFileMime(files.file, type))) {
         return res.status(400).json({ error: 'Invalid file type' });
       }
-      contentUrl = await saveFile(req.files.file, type);
+      contentUrl = await saveFile(files.file, type);
     }
 
     const entry = await prisma.entry.create({
       data: {
         tripId,
         userId,
-        type,
+        type: type as EntryType,
         rawText: sanitizeHtml(req.body.rawText) || null,
         contentUrl,
         latitude: req.body.latitude ? parseFloat(req.body.latitude) : null,
@@ -144,28 +127,24 @@ router.post('/trips/:tripId/entries', checkEntryLimit, async (req: Request<{ tri
       },
     });
 
-    // ── Enqueue AI jobs ───────────────────────────────────────────────────────
-    if (aiQueue) {
-      if (type === 'VOICE' && contentUrl) {
-        const audioUrl = contentUrl.startsWith('http') ? contentUrl : `${BASE_URL}${contentUrl}`;
-        await aiQueue.add('transcribe-audio', {
-          entryId: entry.id,
-          tripId,
-          contentUrl: audioUrl,
-        });
-      }
-
-      if (type === 'PHOTO' && contentUrl) {
-        const imageUrl = contentUrl.startsWith('http') ? contentUrl : `${BASE_URL}${contentUrl}`;
-        await aiQueue.add('process-image-ocr', {
-          entryId: entry.id,
-          tripId,
-          contentUrl: imageUrl,
-        });
-      }
+    if (aiQueue && type === 'VOICE' && contentUrl) {
+      const audioUrl = contentUrl.startsWith('http') ? contentUrl : `${BASE_URL}${contentUrl}`;
+      await aiQueue.add('transcribe-audio', {
+        entryId: entry.id,
+        tripId,
+        contentUrl: audioUrl,
+      });
     }
 
-    // ── Real-time broadcast ───────────────────────────────────────────────────
+    if (aiQueue && type === 'PHOTO' && contentUrl) {
+      const imageUrl = contentUrl.startsWith('http') ? contentUrl : `${BASE_URL}${contentUrl}`;
+      await aiQueue.add('process-image-ocr', {
+        entryId: entry.id,
+        tripId,
+        contentUrl: imageUrl,
+      });
+    }
+
     const io = req.app.get('io');
     if (io) io.to(`trip:${tripId}`).emit('new-entry', entry);
 
@@ -180,9 +159,8 @@ router.delete('/:id', async (req, res, next) => {
   try {
     const entry = await prisma.entry.findUnique({ where: { id: req.params.id } });
     if (!entry) return res.status(404).json({ error: 'Entry not found' });
-    if (entry.userId !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
+    if (entry.userId !== req.user!.id) return res.status(403).json({ error: 'Forbidden' });
 
-    // Soft delete instead of hard delete
     await prisma.entry.update({
       where: { id: req.params.id },
       data: { deletedAt: new Date() },
@@ -202,18 +180,18 @@ router.patch('/:id', validateAsync(UpdateEntrySchema), async (req, res, next) =>
   try {
     const entry = await prisma.entry.findUnique({ where: { id: req.params.id } });
     if (!entry) return res.status(404).json({ error: 'Entry not found' });
-    if (entry.userId !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
+    if (entry.userId !== req.user!.id) return res.status(403).json({ error: 'Forbidden' });
 
-    const { rawText, category, sentiment, tags } = req.validated;
-    const data = {};
+    const { rawText, category, sentiment, tags } = req.validated as { rawText?: string; category?: string; sentiment?: string; tags?: string[] };
+    const data: { rawText?: string | null; category?: Category; sentiment?: string; tags?: string[] } = {};
     if (rawText !== undefined) data.rawText = sanitizeHtml(rawText);
-    if (category !== undefined) data.category = category;
+    if (category !== undefined) data.category = category as Category;
     if (sentiment !== undefined) data.sentiment = sentiment;
     if (tags !== undefined) data.tags = tags;
 
     const updated = await prisma.entry.update({
       where: { id: req.params.id },
-      data,
+      data: data as any,
       include: {
         user: { select: { id: true, name: true, avatar: true } },
         reactions: true,
@@ -233,9 +211,9 @@ router.patch('/:id', validateAsync(UpdateEntrySchema), async (req, res, next) =>
 // ── POST /api/entries/:id/reactions ──────────────────────────────────────────
 router.post('/:id/reactions', validateAsync(CreateReactionSchema), async (req, res, next) => {
   try {
-    const { emoji } = req.validated;
+    const { emoji } = req.validated as { emoji: string };
     const entryId = req.params.id;
-    const userId = req.user.id;
+    const userId = req.user!.id;
 
     const existing = await prisma.reaction.findUnique({
       where: { entryId_userId_emoji: { entryId, userId, emoji } },
@@ -260,8 +238,8 @@ router.post('/:id/comments', validateAsync(CreateCommentSchema), async (req, res
     const comment = await prisma.comment.create({
       data: {
         entryId: req.params.id,
-        userId: req.user.id,
-        text: sanitizeHtml(req.validated.text),
+        userId: req.user!.id,
+        text: sanitizeHtml((req.validated as { text: string }).text) as string,
       },
       include: { user: { select: { id: true, name: true } } },
     });
@@ -279,10 +257,9 @@ router.delete('/:entryId/comments/:commentId', async (req, res, next) => {
     if (!comment) return res.status(404).json({ error: 'Comment not found' });
     if (comment.entryId !== entryId) return res.status(400).json({ error: 'Comment does not belong to this entry' });
 
-    // Allow comment author or entry author to delete
-    if (comment.userId !== req.user.id) {
+    if (comment.userId !== req.user!.id) {
       const entry = await prisma.entry.findUnique({ where: { id: entryId } });
-      if (!entry || entry.userId !== req.user.id) {
+      if (!entry || entry.userId !== req.user!.id) {
         return res.status(403).json({ error: 'Forbidden' });
       }
     }
@@ -311,7 +288,6 @@ router.get('/:id/status', async (req, res, next) => {
     });
     if (!entry) return res.status(404).json({ error: 'Entry not found' });
 
-    // Determine if still processing
     const processing =
       (entry.type === 'VOICE' && !entry.transcription) ||
       (entry.type === 'PHOTO' && !entry.ocrText && !entry.category);
@@ -322,4 +298,4 @@ router.get('/:id/status', async (req, res, next) => {
   }
 });
 
-module.exports = router;
+export default router;

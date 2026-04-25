@@ -52,7 +52,7 @@ O objetivo final não é apenas um e-book de lembrança para quem viajou, e sim 
 └─────────────────────────┼──────────────────────────────────┘
                           │ WiFi / 4G
 ┌─────────────────────────┼──────────────────────────────────┐
-│  BACKEND (Node.js 18)   │                                  │
+│  BACKEND (Node.js 18 + TypeScript)│                                 │
 │  ┌─────────┐ ┌─────────┐│┌─────────┐ ┌─────────────────┐  │
 │  │ Express │ │Socket.io│││  Bull   │ │  APIs OpenAI    │  │
 │  │  REST   │ │(salas)  │││ Fila    │ │  • Whisper      │  │
@@ -116,7 +116,7 @@ hostname -I  # Linux
 
 Acesse no celular: `http://SEU_IP:5173`
 
-> **Nota:** O CORS do backend está pré-configurado para `localhost:5173` e `192.168.x.x:5173`. Adicione seu IP específico em `backend/src/index.js` se necessário.
+> **Nota:** O CORS do backend está pré-configurado para `localhost:5173` e `192.168.x.x:5173`. Adicione seu IP específico em `backend/src/index.ts` se necessário.
 
 ---
 
@@ -293,7 +293,7 @@ VITE_API_URL=http://localhost:3001
 | Camada             | Tecnologia                                          |
 | ------------------ | --------------------------------------------------- |
 | **Frontend**       | React 18, Vite, Workbox (PWA)                       |
-| **Backend**        | Node.js 18, Express, Socket.io                      |
+| **Backend**        | Node.js 18, TypeScript, Express, Socket.io          |
 | **Banco de Dados** | PostgreSQL 16, Prisma ORM                           |
 | **Cache/Fila**     | Redis 7, Bull                                       |
 | **IA**             | OpenAI Whisper + GPT-4 Vision (com modo MOCK)       |

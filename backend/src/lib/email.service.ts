@@ -1,12 +1,17 @@
-'use strict';
+import nodemailer from 'nodemailer';
+import { logger } from './logger';
 
-const { logger } = require('./logger');
+interface EmailPayload {
+  to: string;
+  subject: string;
+  text: string;
+  html?: string;
+}
 
-let _smtpTransporter = null;
+let _smtpTransporter: nodemailer.Transporter | null = null;
 
-const getSmtpTransporter = () => {
+const getSmtpTransporter = (): nodemailer.Transporter => {
   if (_smtpTransporter) return _smtpTransporter;
-  const nodemailer = require('nodemailer');
   _smtpTransporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
     port: parseInt(process.env.SMTP_PORT || '587', 10),
@@ -19,7 +24,7 @@ const getSmtpTransporter = () => {
   return _smtpTransporter;
 };
 
-async function sendViaSmtp(payload) {
+async function sendViaSmtp(payload: EmailPayload) {
   const transporter = getSmtpTransporter();
   await transporter.sendMail({
     from: process.env.EMAIL_FROM || 'noreply@tokyotriphub.com',
@@ -31,11 +36,11 @@ async function sendViaSmtp(payload) {
   logger.info({ to: payload.to, subject: payload.subject }, 'Email sent via SMTP');
 }
 
-async function sendViaConsole(payload) {
+async function sendViaConsole(payload: EmailPayload) {
   logger.info({ email: { to: payload.to, subject: payload.subject, body: payload.text } }, '[EMAIL] Would send email');
 }
 
-async function sendEmail(payload) {
+async function sendEmail(payload: EmailPayload) {
   const provider = process.env.EMAIL_PROVIDER || 'console';
   try {
     if (provider === 'smtp') {
@@ -48,4 +53,4 @@ async function sendEmail(payload) {
   }
 }
 
-module.exports = { sendEmail };
+export { sendEmail };

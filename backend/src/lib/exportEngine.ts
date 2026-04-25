@@ -1,18 +1,51 @@
-/**
- * backend/src/lib/exportEngine.js
- * Core export generation: PDF (Puppeteer), EPUB, Markdown
- */
-const path = require('path');
-const fs = require('fs');
-const { logger } = require('./logger');
-const { sanitizeEntry } = require('./sanitizer');
-const { prisma } = require('./prisma');
+import path from 'path';
+import fs from 'fs';
+import { logger } from './logger';
+import { sanitizeEntry } from './sanitizer';
+import { prisma } from './prisma';
+import JSZip from 'jszip';
+import type { Category, Sentiment } from '../types';
+
+let puppeteer: any = null;
+try {
+  // Dynamic require for optional dependency
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  puppeteer = require('puppeteer');
+} catch {}
 
 const EXPORTS_DIR = process.env.EXPORTS_DIR || path.join(__dirname, '../../exports');
 if (!fs.existsSync(EXPORTS_DIR)) fs.mkdirSync(EXPORTS_DIR, { recursive: true });
 
-// Cleanup exports older than 24h
-function scheduleCleanup(filePath) {
+interface ExportEntry {
+  id: string;
+  capturedAt: Date;
+  rawText?: string | null;
+  ocrText?: string | null;
+  transcription?: string | null;
+  contentUrl?: string | null;
+  category?: Category | null;
+  sentiment?: Sentiment | null;
+  tags?: string[];
+  address?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  type?: string;
+  user?: { name?: string; id?: string; email?: string } | null;
+  reactions?: Array<unknown>;
+  comments?: Array<unknown>;
+}
+
+interface ExportTrip {
+  id: string;
+  title?: string | null;
+  destination?: string | null;
+  startDate?: Date | null;
+  endDate?: Date | null;
+  memberships: Array<{ user: { name: string } }>;
+  entries: ExportEntry[];
+}
+
+function scheduleCleanup(filePath: string) {
   setTimeout(() => {
     try {
       if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
@@ -21,9 +54,7 @@ function scheduleCleanup(filePath) {
   }, 24 * 60 * 60 * 1000);
 }
 
-// ─── Data Fetching ───────────────────────────────────────────────────────────
-
-async function fetchExportData(tripId, entryIds) {
+async function fetchExportData(tripId: string, entryIds: string[] | null): Promise<ExportTrip> {
   const trip = await prisma.trip.findUnique({
     where: { id: tripId },
     include: {
@@ -36,18 +67,16 @@ async function fetchExportData(tripId, entryIds) {
     },
   });
   if (!trip) throw new Error('Trip not found');
-  
+
   trip.title = trip.title?.replace(/</g, '&lt;').replace(/>/g, '&gt;');
   trip.destination = trip.destination?.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  trip.entries = trip.entries.map(sanitizeEntry);
-  
+  trip.entries = trip.entries.map(sanitizeEntry) as typeof trip.entries;
+
   return trip;
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function groupByDate(entries) {
-  const groups = {};
+function groupByDate(entries: ExportEntry[]): Array<{ date: string; items: ExportEntry[] }> {
+  const groups: Record<string, ExportEntry[]> = {};
   for (const e of entries) {
     const date = new Date(e.capturedAt).toDateString();
     if (!groups[date]) groups[date] = [];
@@ -56,8 +85,14 @@ function groupByDate(entries) {
   return Object.entries(groups).map(([date, items]) => ({ date, items }));
 }
 
-function extractCosts(entries) {
-  const costs = [];
+interface CostItem {
+  amount: number;
+  label: string;
+  category?: Category | null;
+}
+
+function extractCosts(entries: ExportEntry[]): CostItem[] {
+  const costs: CostItem[] = [];
   for (const e of entries) {
     const text = (e.ocrText || '') + ' ' + (e.rawText || '');
     const matches = [...text.matchAll(/[¥￥]([0-9,]+)/g)];
@@ -72,7 +107,7 @@ function extractCosts(entries) {
   return costs;
 }
 
-function getTopHighlights(entries, limit = 10) {
+function getTopHighlights(entries: ExportEntry[], limit = 10): ExportEntry[] {
   return [...entries]
     .sort((a, b) => {
       const scoreA = (a.reactions?.length || 0) * 2 + (a.sentiment === 'POSITIVE' ? 3 : 0);
@@ -82,7 +117,7 @@ function getTopHighlights(entries, limit = 10) {
     .slice(0, limit);
 }
 
-const CATEGORY_LABELS = {
+const CATEGORY_LABELS: Record<Category, string> = {
   FOOD_DRINK: '🍜 Food & Drink',
   SIGHTSEEING: '🗼 Sightseeing',
   ACCOMMODATION: '🏨 Accommodation',
@@ -92,28 +127,26 @@ const CATEGORY_LABELS = {
   MISC: '📝 Misc',
 };
 
-const SENTIMENT_EMOJI = { POSITIVE: '😊', NEUTRAL: '😐', NEGATIVE: '😟' };
+const SENTIMENT_EMOJI: Record<Sentiment, string> = { POSITIVE: '😊', NEUTRAL: '😐', NEGATIVE: '😟' };
 
-function serverUrl() {
+function serverUrl(): string {
   return process.env.SERVER_URL || 'http://localhost:3001';
 }
 
-function entryImageUrl(entry) {
+function entryImageUrl(entry: ExportEntry): string | null {
   if (!entry.contentUrl) return null;
   if (entry.contentUrl.startsWith('http')) return entry.contentUrl;
   return `${serverUrl()}${entry.contentUrl}`;
 }
 
-// ─── PDF HTML Template ────────────────────────────────────────────────────────
-
-function buildPDFHtml(trip, template) {
+function buildPDFHtml(trip: ExportTrip, template: string): string {
   const days = groupByDate(trip.entries);
   const costs = extractCosts(trip.entries);
   const totalCost = costs.reduce((s, c) => s + c.amount, 0);
   const highlights = getTopHighlights(trip.entries);
   const geoEntries = trip.entries.filter(e => e.latitude && e.longitude);
 
-  const byCategory = {};
+  const byCategory: Record<string, ExportEntry[]> = {};
   for (const e of trip.entries) {
     const cat = e.category || 'MISC';
     if (!byCategory[cat]) byCategory[cat] = [];
@@ -135,9 +168,9 @@ function buildPDFHtml(trip, template) {
     ? "'Playfair Display', 'Georgia', serif"
     : "'Noto Serif', 'Georgia', serif";
 
-  function renderEntry(e) {
+  function renderEntry(e: ExportEntry): string {
     const img = entryImageUrl(e);
-    const tags = (e.tags || []).map(t => `<span class="tag">${t}</span>`).join('');
+    const tags = (e.tags || []).map((t: string) => `<span class="tag">${t}</span>`).join('');
     const sentiment = e.sentiment ? `<span class="sentiment">${SENTIMENT_EMOJI[e.sentiment]}</span>` : '';
     return `
       <div class="entry">
@@ -169,18 +202,18 @@ function buildPDFHtml(trip, template) {
 
   const tocItems = Object.entries(byCategory)
     .filter(([, v]) => v.length > 0)
-    .map(([cat, items]) => `<li><span class="toc-cat">${CATEGORY_LABELS[cat] || cat}</span><span class="toc-count">${items.length} entries</span></li>`)
+    .map(([cat, items]) => `<li><span class="toc-cat">${CATEGORY_LABELS[cat as Category] || cat}</span><span class="toc-count">${items.length} entries</span></li>`)
     .join('');
 
   const highlightCards = highlights.map(e => `
     <div class="highlight-card">
       ${entryImageUrl(e) ? `<img src="${entryImageUrl(e)}" onerror="this.style.display='none'" />` : ''}
-      <p>${(e.rawText || e.transcription || 'Memory').slice(0, 120)}${(e.rawText || '').length > 120 ? '…' : ''}</p>
+      <p>${(e.rawText || e.transcription || 'Memory')?.slice(0, 120)}${(e.rawText || '').length > 120 ? '…' : ''}</p>
       <span class="hl-reactions">❤️ ${e.reactions?.length || 0}</span>
     </div>`).join('');
 
   const costRows = costs.slice(0, 20).map(c =>
-    `<tr><td>${c.label.slice(0, 50)}</td><td>${CATEGORY_LABELS[c.category] || '—'}</td><td class="amount">¥${c.amount.toLocaleString()}</td></tr>`
+    `<tr><td>${c.label.slice(0, 50)}</td><td>${CATEGORY_LABELS[c.category as Category] || '—'}</td><td class="amount">¥${c.amount.toLocaleString()}</td></tr>`
   ).join('');
 
   const mapScript = geoEntries.length > 0 ? `
@@ -320,7 +353,7 @@ ${mapScript}
   ${trip.startDate ? `<p class="meta">${new Date(trip.startDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })} — ${trip.endDate ? new Date(trip.endDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : 'Ongoing'}</p>` : ''}
   <div class="cover-line"></div>
   <p class="participants">
-    ${trip.memberships.map(m => m.user.name).join(' · ')}
+    ${trip.memberships.map((m: { user: { name: string } }) => m.user.name).join(' · ')}
   </p>
   <p class="meta" style="margin-top:32px">${trip.entries.length} moments captured</p>
 </div>
@@ -330,8 +363,8 @@ ${mapScript}
   <h2>Contents</h2>
   <ul>${tocItems}</ul>
   <p style="margin-top:32px; opacity:0.5; font-size:12px">
-    ${days.length} day${days.length !== 1 ? 's' : ''} • 
-    ${trip.entries.filter(e => e.type === 'PHOTO').length} photos • 
+    ${days.length} day${days.length !== 1 ? 's' : ''} •
+    ${trip.entries.filter(e => e.type === 'PHOTO').length} photos •
     ${trip.entries.filter(e => e.type === 'VOICE').length} voice memos
   </p>
 </div>
@@ -376,13 +409,8 @@ ${costs.length > 0 ? `
 </html>`;
 }
 
-// ─── PDF Generation ───────────────────────────────────────────────────────────
-
-async function generatePDF(trip, template, jobId) {
-  let puppeteer;
-  try {
-    puppeteer = require('puppeteer');
-  } catch {
+async function generatePDF(trip: ExportTrip, template: string, jobId: string | number): Promise<string> {
+  if (!puppeteer) {
     throw new Error('puppeteer not installed. Run: npm install puppeteer');
   }
 
@@ -398,7 +426,6 @@ async function generatePDF(trip, template, jobId) {
   try {
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: 'networkidle0', timeout: 60000 });
-    // Wait for Leaflet map if present
     if (trip.entries.some(e => e.latitude)) {
       await page.waitForTimeout(2000);
     }
@@ -416,32 +443,25 @@ async function generatePDF(trip, template, jobId) {
   return outFile;
 }
 
-// ─── EPUB Generation ──────────────────────────────────────────────────────────
-
-async function generateEPUB(trip, template, jobId) {
-  const JSZip = require('jszip');
+async function generateEPUB(trip: ExportTrip, template: string, jobId: string | number): Promise<string> {
   const days = groupByDate(trip.entries);
   const highlights = getTopHighlights(trip.entries);
 
   const zip = new JSZip();
 
-  // mimetype (must be first, uncompressed)
   zip.file('mimetype', 'application/epub+zip', { compression: 'STORE' });
 
-  // META-INF/container.xml
-  zip.folder('META-INF').file('container.xml', `<?xml version="1.0"?>
+  zip.folder('META-INF')!.file('container.xml', `<?xml version="1.0"?>
 <container version="1.0" xmlns="urn:oasis:schemas:container">
   <rootfiles>
     <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
   </rootfiles>
 </container>`);
 
-  const oebps = zip.folder('OEBPS');
+  const oebps = zip.folder('OEBPS')!;
 
-  // Build chapter files
-  const chapters = [];
+  const chapters: Array<{ id: string; title: string; file: string }> = [];
 
-  // Cover chapter
   const coverContent = `<?xml version="1.0" encoding="utf-8"?>
 <!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml">
 <head><title>${trip.title}</title><link rel="stylesheet" href="styles.css"/></head>
@@ -449,16 +469,15 @@ async function generateEPUB(trip, template, jobId) {
   <h1>${trip.title}</h1>
   <p class="destination">${trip.destination}</p>
   ${trip.startDate ? `<p class="dates">${new Date(trip.startDate).toLocaleDateString()}</p>` : ''}
-  <p class="participants">${trip.memberships.map(m => m.user.name).join(', ')}</p>
+  <p class="participants">${trip.memberships.map((m: { user: { name: string } }) => m.user.name).join(', ')}</p>
 </body></html>`;
   oebps.file('cover.xhtml', coverContent);
   chapters.push({ id: 'cover', title: 'Cover', file: 'cover.xhtml' });
 
-  // Day chapters
   days.forEach(({ date, items }, idx) => {
     const chId = `day-${idx}`;
     const dateStr = new Date(date).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
-    const entriesHtml = items.map(e => `
+    const entriesHtml = items.map((e: ExportEntry) => `
       <div class="entry">
         ${entryImageUrl(e) ? `<img src="${entryImageUrl(e)}" alt="entry" class="entry-img"/>` : ''}
         <p class="meta">${e.user?.name || ''} · ${new Date(e.capturedAt).toLocaleTimeString()}</p>
@@ -474,9 +493,8 @@ async function generateEPUB(trip, template, jobId) {
     chapters.push({ id: chId, title: dateStr, file: `${chId}.xhtml` });
   });
 
-  // Highlights chapter
   if (highlights.length > 0) {
-    const hlHtml = highlights.map(e => `
+    const hlHtml = highlights.map((e: ExportEntry) => `
       <div class="entry">
         ${entryImageUrl(e) ? `<img src="${entryImageUrl(e)}" alt="highlight" class="entry-img"/>` : ''}
         <p>${(e.rawText || e.transcription || '').slice(0, 200)}</p>
@@ -489,7 +507,6 @@ async function generateEPUB(trip, template, jobId) {
     chapters.push({ id: 'highlights', title: 'Highlights', file: 'highlights.xhtml' });
   }
 
-  // CSS
   oebps.file('styles.css', `
 body { font-family: Georgia, serif; max-width: 600px; margin: 0 auto; padding: 24px; color: #1c1917; }
 h1 { font-size: 2em; margin-bottom: 0.5em; color: #dc2626; }
@@ -502,7 +519,6 @@ h1 { font-size: 2em; margin-bottom: 0.5em; color: #dc2626; }
 .loc { color: #888; font-size: 0.85em; }
 `);
 
-  // content.opf
   const manifestItems = chapters.map(ch =>
     `<item id="${ch.id}" href="${ch.file}" media-type="application/xhtml+xml"/>`
   ).join('\n    ');
@@ -514,7 +530,7 @@ h1 { font-size: 2em; margin-bottom: 0.5em; color: #dc2626; }
     <dc:title>${trip.title}</dc:title>
     <dc:language>en</dc:language>
     <dc:identifier id="uid">${trip.id}</dc:identifier>
-    <dc:creator>${trip.memberships.map(m => m.user.name).join(', ')}</dc:creator>
+    <dc:creator>${trip.memberships.map((m: { user: { name: string } }) => m.user.name).join(', ')}</dc:creator>
     <dc:subject>Travel</dc:subject>
     <meta property="dcterms:modified">${new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')}</meta>
   </metadata>
@@ -528,7 +544,6 @@ h1 { font-size: 2em; margin-bottom: 0.5em; color: #dc2626; }
   </spine>
 </package>`);
 
-  // toc.ncx
   const navPoints = chapters.map((ch, i) => `
     <navPoint id="navpoint-${i}" playOrder="${i + 1}">
       <navLabel><text>${ch.title}</text></navLabel>
@@ -549,9 +564,7 @@ h1 { font-size: 2em; margin-bottom: 0.5em; color: #dc2626; }
   return outFile;
 }
 
-// ─── Markdown Generation ──────────────────────────────────────────────────────
-
-async function generateMarkdown(trip, jobId) {
+async function generateMarkdown(trip: ExportTrip, jobId: string | number): Promise<string> {
   const days = groupByDate(trip.entries);
   const highlights = getTopHighlights(trip.entries);
   const costs = extractCosts(trip.entries);
@@ -561,7 +574,7 @@ title: "${trip.title}"
 destination: "${trip.destination}"
 startDate: ${trip.startDate ? new Date(trip.startDate).toISOString().split('T')[0] : 'unknown'}
 endDate: ${trip.endDate ? new Date(trip.endDate).toISOString().split('T')[0] : 'unknown'}
-participants: [${trip.memberships.map(m => `"${m.user.name}"`).join(', ')}]
+participants: [${trip.memberships.map((m: { user: { name: string } }) => `"${m.user.name}"`).join(', ')}]
 totalEntries: ${trip.entries.length}
 exportedAt: ${new Date().toISOString()}
 ---
@@ -569,7 +582,7 @@ exportedAt: ${new Date().toISOString()}
 # ${trip.title}
 📍 ${trip.destination}
 
-> *${trip.memberships.map(m => m.user.name).join(', ')}*
+> *${trip.memberships.map((m: { user: { name: string } }) => m.user.name).join(', ')}*
 
 ---
 
@@ -586,7 +599,7 @@ exportedAt: ${new Date().toISOString()}
       if (e.ocrText) md += `\n> 📄 *${e.ocrText}*\n`;
       if (e.contentUrl) md += `\n![Entry media](${entryImageUrl(e)})\n`;
       if (e.address) md += `\n📍 ${e.address}\n`;
-      if (e.tags?.length) md += `\n**Tags:** ${e.tags.map(t => `\`${t}\``).join(' ')}\n`;
+      if (e.tags?.length) md += `\n**Tags:** ${e.tags.map((t: string) => `\`${t}\``).join(' ')}\n`;
       md += '\n---\n\n';
     }
   }
@@ -602,7 +615,7 @@ exportedAt: ${new Date().toISOString()}
   if (costs.length > 0) {
     md += `## 💴 Cost Summary\n\n| Item | Category | Amount |\n|------|----------|--------|\n`;
     for (const c of costs.slice(0, 20)) {
-      md += `| ${c.label.slice(0, 40)} | ${CATEGORY_LABELS[c.category] || '—'} | ¥${c.amount.toLocaleString()} |\n`;
+      md += `| ${c.label.slice(0, 40)} | ${CATEGORY_LABELS[c.category as Category] || '—'} | ¥${c.amount.toLocaleString()} |\n`;
     }
     const total = costs.reduce((s, c) => s + c.amount, 0);
     md += `| **Total** | | **¥${total.toLocaleString()}** |\n\n`;
@@ -614,12 +627,16 @@ exportedAt: ${new Date().toISOString()}
   return outFile;
 }
 
-// ─── Main Export Dispatcher ───────────────────────────────────────────────────
-
-async function generateExport({ tripId, format, template, entryIds, jobId }) {
+async function generateExport({ tripId, format, template, entryIds, jobId }: {
+  tripId: string;
+  format: string;
+  template: string;
+  entryIds: string[] | null;
+  jobId: string | number;
+}) {
   const trip = await fetchExportData(tripId, entryIds);
 
-  let filePath;
+  let filePath: string;
   if (format === 'PDF') {
     filePath = await generatePDF(trip, template || 'default', jobId);
   } else if (format === 'EPUB') {
@@ -630,10 +647,10 @@ async function generateExport({ tripId, format, template, entryIds, jobId }) {
     throw new Error(`Unsupported format: ${format}`);
   }
 
-  const ext = { PDF: 'pdf', EPUB: 'epub', MARKDOWN: 'md' }[format];
+  const ext: Record<string, string> = { PDF: 'pdf', EPUB: 'epub', MARKDOWN: 'md' };
   const downloadUrl = `/api/export/${jobId}/download`;
 
-  return { filePath, downloadUrl, format, ext };
+  return { filePath, downloadUrl, format, ext: ext[format] };
 }
 
-module.exports = { generateExport, EXPORTS_DIR };
+export { generateExport, EXPORTS_DIR };

@@ -1,9 +1,11 @@
-const router = require('express').Router();
-const { prisma } = require('../lib/prisma');
-const { requireUser } = require('../middleware/session');
-const { CreateTripSchema, UpdateTripSchema, PublishTripSchema, validateAsync } = require('../lib/validation');
-const { sanitizeHtml } = require('../lib/sanitizer');
-const { checkTripLimit, requireTier } = require('../middleware/subscription');
+import { Router, Request, Response, NextFunction } from 'express';
+import { prisma } from '../lib/prisma';
+import { requireUser } from '../middleware/session';
+import { CreateTripSchema, UpdateTripSchema, PublishTripSchema, validateAsync } from '../lib/validation';
+import { sanitizeHtml } from '../lib/sanitizer';
+import { checkTripLimit, requireTier } from '../middleware/subscription';
+
+const router = Router();
 
 function generateInviteCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -16,7 +18,7 @@ function generateInviteCode() {
 router.get('/', requireUser, async (req, res, next) => {
   try {
     const trips = await prisma.trip.findMany({
-      where: { memberships: { some: { userId: req.user.id } } },
+      where: { memberships: { some: { userId: req.user!.id } } },
       select: { id: true, title: true, destination: true, startDate: true, endDate: true, inviteCode: true, status: true, createdAt: true },
       orderBy: { createdAt: 'desc' },
     });
@@ -28,14 +30,14 @@ router.get('/', requireUser, async (req, res, next) => {
 
 // POST /api/trips
 router.post('/', requireUser, checkTripLimit, validateAsync(CreateTripSchema), async (req, res, next) => {
-  const { title, destination, startDate, endDate } = req.validated;
+  const { title, destination, startDate, endDate } = req.validated as { title: string; destination: string; startDate?: string; endDate?: string };
   const data = {
-    title: sanitizeHtml(title.trim()),
+    title: sanitizeHtml(title.trim()) as string,
     destination: sanitizeHtml(destination) || 'Tokyo, Japan',
-    ownerId: req.user.id,
+    ownerId: req.user!.id,
     startDate: startDate && startDate.trim() ? new Date(startDate) : null,
     endDate: endDate && endDate.trim() ? new Date(endDate) : null,
-    memberships: { create: { userId: req.user.id, role: 'OWNER' } },
+    memberships: { create: { userId: req.user!.id, role: 'OWNER' as const } },
   };
 
   const MAX_ATTEMPTS = 3;
@@ -44,8 +46,8 @@ router.post('/', requireUser, checkTripLimit, validateAsync(CreateTripSchema), a
       const trip = await prisma.trip.create({ data: { ...data, inviteCode: generateInviteCode() } });
       return res.status(201).json({ trip, membership: { role: 'OWNER' } });
     } catch (err) {
-      if (err.code === 'P2002' && attempt < MAX_ATTEMPTS - 1) continue;
-      if (err.code === 'P2002') {
+      if ((err as any).code === 'P2002' && attempt < MAX_ATTEMPTS - 1) continue;
+      if ((err as any).code === 'P2002') {
         return res.status(503).json({ error: 'Could not generate a unique invite code. Please try again.' });
       }
       return next(err);
@@ -62,9 +64,9 @@ router.post('/:code/join', requireUser, async (req, res, next) => {
     if (trip.status === 'ARCHIVED') return res.status(410).json({ error: 'This trip has ended' });
 
     const membership = await prisma.tripMembership.upsert({
-      where: { userId_tripId: { userId: req.user.id, tripId: trip.id } },
+      where: { userId_tripId: { userId: req.user!.id, tripId: trip.id } },
       update: {},
-      create: { userId: req.user.id, tripId: trip.id, role: 'MEMBER' },
+      create: { userId: req.user!.id, tripId: trip.id, role: 'MEMBER' },
     });
 
     const fullTrip = await prisma.trip.findUnique({
@@ -86,7 +88,7 @@ router.get('/:id', requireUser, async (req, res, next) => {
       include: { memberships: { include: { user: true } }, _count: { select: { entries: true } } },
     });
     if (!trip) return res.status(404).json({ error: 'Trip not found' });
-    const isMember = trip.memberships.some(m => m.userId === req.user.id);
+    const isMember = trip.memberships.some(m => m.userId === req.user!.id);
     if (!isMember) return res.status(403).json({ error: 'Not a member' });
     res.json({ trip });
   } catch (err) {
@@ -97,11 +99,11 @@ router.get('/:id', requireUser, async (req, res, next) => {
 // GET /api/trips/:id/feed
 router.get('/:id/feed', requireUser, async (req, res, next) => {
   try {
-    const limit = Math.min(parseInt(req.query.limit) || 20, 50);
-    const cursor = req.query.cursor;
+    const limit = Math.min(parseInt(req.query.limit as string) || 20, 50);
+    const cursor = req.query.cursor as string | undefined;
 
     const membership = await prisma.tripMembership.findUnique({
-      where: { userId_tripId: { userId: req.user.id, tripId: req.params.id } },
+      where: { userId_tripId: { userId: req.user!.id, tripId: req.params.id } },
     });
     if (!membership) return res.status(403).json({ error: 'Not a member' });
 
@@ -143,7 +145,7 @@ router.patch('/:id/members/:userId', requireUser, async (req, res, next) => {
     const { id: tripId, userId: targetUserId } = req.params;
 
     const callerMembership = await prisma.tripMembership.findUnique({
-      where: { userId_tripId: { userId: req.user.id, tripId } },
+      where: { userId_tripId: { userId: req.user!.id, tripId } },
     });
     if (!callerMembership || callerMembership.role !== 'OWNER') {
       return res.status(403).json({ error: 'Only owners can change member roles' });
@@ -183,7 +185,7 @@ router.post('/:id/transfer-ownership', requireUser, async (req, res, next) => {
     }
 
     const callerMembership = await prisma.tripMembership.findUnique({
-      where: { userId_tripId: { userId: req.user.id, tripId } },
+      where: { userId_tripId: { userId: req.user!.id, tripId } },
     });
     if (!callerMembership || callerMembership.role !== 'OWNER') {
       return res.status(403).json({ error: 'Only the current owner can transfer ownership' });
@@ -226,37 +228,33 @@ router.post('/:id/transfer-ownership', requireUser, async (req, res, next) => {
 router.delete('/:id', requireUser, async (req, res, next) => {
   try {
     const { id } = req.params;
-    
+
     const membership = await prisma.tripMembership.findUnique({
-      where: { userId_tripId: { userId: req.user.id, tripId: id } },
+      where: { userId_tripId: { userId: req.user!.id, tripId: id } },
     });
-    
+
     if (!membership) {
       return res.status(404).json({ error: 'Not a member of this trip' });
     }
-    
+
     if (membership.role !== 'OWNER') {
-      // Member - just leave
       await prisma.tripMembership.delete({
-        where: { userId_tripId: { userId: req.user.id, tripId: id } },
+        where: { userId_tripId: { userId: req.user!.id, tripId: id } },
       });
     } else {
-      // Owner - check if other owners exist
       const otherOwners = await prisma.tripMembership.count({
-        where: { tripId: id, role: 'OWNER', userId: { not: req.user.id } },
+        where: { tripId: id, role: 'OWNER', userId: { not: req.user!.id } },
       });
-      
+
       if (otherOwners > 0) {
-        // Other owners exist - leave the group
         await prisma.tripMembership.delete({
-          where: { userId_tripId: { userId: req.user.id, tripId: id } },
+          where: { userId_tripId: { userId: req.user!.id, tripId: id } },
         });
       } else {
-        // Only owner - delete entire trip
         await prisma.trip.delete({ where: { id } });
       }
     }
-    
+
     res.json({ ok: true });
   } catch (err) {
     next(err);
@@ -269,7 +267,7 @@ router.patch('/:id', requireUser, validateAsync(UpdateTripSchema), async (req, r
     const { id } = req.params;
 
     const membership = await prisma.tripMembership.findUnique({
-      where: { userId_tripId: { userId: req.user.id, tripId: id } },
+      where: { userId_tripId: { userId: req.user!.id, tripId: id } },
     });
     if (!membership || membership.role !== 'OWNER') {
       return res.status(403).json({ error: 'Only owners can update trips' });
@@ -277,8 +275,8 @@ router.patch('/:id', requireUser, validateAsync(UpdateTripSchema), async (req, r
 
     const { title, destination, startDate, endDate, status } = req.validated as { title?: string; destination?: string; startDate?: string; endDate?: string; status?: 'ACTIVE' | 'ENDED' | 'ARCHIVED' };
     const data: { title?: string; destination?: string; startDate?: Date | null; endDate?: Date | null; status?: 'ACTIVE' | 'ENDED' | 'ARCHIVED' } = {};
-    if (title !== undefined) data.title = sanitizeHtml(title.trim());
-    if (destination !== undefined) data.destination = sanitizeHtml(destination);
+    if (title !== undefined) data.title = sanitizeHtml(title.trim()) ?? undefined;
+    if (destination !== undefined) data.destination = sanitizeHtml(destination) ?? undefined;
     if (startDate !== undefined) data.startDate = startDate ? new Date(startDate) : null;
     if (endDate !== undefined) data.endDate = endDate ? new Date(endDate) : null;
     if (status !== undefined) data.status = status;
@@ -299,20 +297,20 @@ router.patch('/:id', requireUser, validateAsync(UpdateTripSchema), async (req, r
 router.post('/:id/archive', requireUser, async (req, res, next) => {
   try {
     const { id } = req.params;
-    
+
     const membership = await prisma.tripMembership.findUnique({
-      where: { userId_tripId: { userId: req.user.id, tripId: id } },
+      where: { userId_tripId: { userId: req.user!.id, tripId: id } },
     });
-    
+
     if (!membership || membership.role !== 'OWNER') {
       return res.status(403).json({ error: 'Only owners can archive trips' });
     }
-    
+
     const trip = await prisma.trip.update({
       where: { id },
       data: { status: 'ARCHIVED' },
     });
-    
+
     res.json({ id: trip.id, status: trip.status });
   } catch (err) {
     next(err);
@@ -325,7 +323,7 @@ router.post('/:id/publish', requireUser, requireTier('PREMIUM'), validateAsync(P
     const { id } = req.params;
 
     const membership = await prisma.tripMembership.findUnique({
-      where: { userId_tripId: { userId: req.user.id, tripId: id } },
+      where: { userId_tripId: { userId: req.user!.id, tripId: id } },
     });
     if (!membership || membership.role !== 'OWNER') {
       return res.status(403).json({ error: 'Only owners can publish trips' });
@@ -345,7 +343,7 @@ router.post('/:id/publish', requireUser, requireTier('PREMIUM'), validateAsync(P
 
     res.json({ id: trip.id, isPublished: trip.isPublished, publishedSlug: trip.publishedSlug, publishedUrl: trip.publishedUrl, customDomain: trip.customDomain });
   } catch (err) {
-    if (err.code === 'P2002') {
+    if ((err as any).code === 'P2002') {
       return res.status(409).json({ error: 'This slug or custom domain is already taken' });
     }
     next(err);
@@ -358,7 +356,7 @@ router.post('/:id/unpublish', requireUser, async (req, res, next) => {
     const { id } = req.params;
 
     const membership = await prisma.tripMembership.findUnique({
-      where: { userId_tripId: { userId: req.user.id, tripId: id } },
+      where: { userId_tripId: { userId: req.user!.id, tripId: id } },
     });
     if (!membership || membership.role !== 'OWNER') {
       return res.status(403).json({ error: 'Only owners can unpublish trips' });
@@ -383,31 +381,31 @@ router.post('/:id/duplicate', requireUser, async (req, res, next) => {
       where: { id },
       include: { entries: true },
     });
-    
+
     if (!original) {
       return res.status(404).json({ error: 'Trip not found' });
     }
-    
+
     const newTrip = await prisma.trip.create({
       data: {
         title: `${original.title} (Copy)`,
         destination: original.destination,
         startDate: original.startDate,
         endDate: original.endDate,
-        ownerId: req.user.id,
+        ownerId: req.user!.id,
         status: 'ACTIVE',
         inviteCode: generateInviteCode(),
       },
     });
-    
+
     await prisma.tripMembership.create({
-      data: { userId: req.user.id, tripId: newTrip.id, role: 'OWNER' },
+      data: { userId: req.user!.id, tripId: newTrip.id, role: 'OWNER' },
     });
-    
+
     res.status(201).json(newTrip);
   } catch (err) {
     next(err);
   }
 });
 
-module.exports = router;
+export default router;

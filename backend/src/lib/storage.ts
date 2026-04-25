@@ -26,28 +26,28 @@ async function getS3Client(): Promise<unknown> {
       region: process.env.AWS_REGION || 'us-east-1',
       credentials: process.env.AWS_ACCESS_KEY_ID ? {
         accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
       } : undefined,
     });
-    s3Bucket = process.env.AWS_S3_BUCKET;
+    s3Bucket = process.env.AWS_S3_BUCKET ?? null;
   }
   return s3Client;
 }
 
 async function uploadToS3(file: UploadedFile, key: string, contentType: string): Promise<string> {
   const { Upload } = await import('@aws-sdk/lib-storage');
-  const client = await getS3Client();
+  const client = await getS3Client() as import('@aws-sdk/client-s3').S3Client;
   const upload = new Upload({
     client,
     params: {
-      Bucket: s3Bucket,
+      Bucket: s3Bucket!,
       Key: key,
       Body: fs.createReadStream(file.tempFilePath),
       ContentType: contentType,
     },
   });
   await upload.done();
-  return `https://${s3Bucket}.s3.${process.env.AWS_REGION || 'us-east-1'}.amazonaws.com/${key}`;
+  return `https://${s3Bucket!}.s3.${process.env.AWS_REGION || 'us-east-1'}.amazonaws.com/${key}`;
 }
 
 let cloudinary: unknown = null;
@@ -119,11 +119,10 @@ export async function deleteFile(url: string | null | undefined): Promise<void> 
   
   if (STORAGE_TYPE === 's3' && url.includes('amazonaws.com')) {
     const { DeleteObjectCommand } = await import('@aws-sdk/client-s3');
-    const client = await getS3Client();
+    const client = await getS3Client() as import('@aws-sdk/client-s3').S3Client;
     const key = url.split('.s3.')[1]?.split('/').slice(1).join('/');
     if (key) {
-      // @ts-expect-error - client is dynamically typed
-      await client.send(new DeleteObjectCommand({ Bucket: s3Bucket, Key: key }));
+      await client.send(new DeleteObjectCommand({ Bucket: s3Bucket!, Key: key }));
       logger.info({ key }, 'File deleted from S3');
     }
     return;

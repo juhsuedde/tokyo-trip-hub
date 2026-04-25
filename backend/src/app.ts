@@ -1,45 +1,44 @@
 /**
- * backend/src/app.js
  * Express app factory — separated from server.listen for testing.
  */
-require('dotenv').config();
+import 'dotenv/config';
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import multer from 'multer';
+import rateLimit from 'express-rate-limit';
+import cookieParser from 'cookie-parser';
+import path from 'path';
+import fs from 'fs';
+
+import { logger, expressMiddleware } from './lib/logger';
+import { prisma } from './lib/prisma';
+import { optionalAuth } from './middleware/auth';
+import { enforceExportFormat } from './middleware/subscription';
+import authRouter from './routes/auth';
+import tripsRouter from './routes/trips';
+import entriesRouter from './routes/entries';
+import usersRouter from './routes/users';
+import exportRouter from './routes/export';
+import { router as apikeysRouter } from './routes/apikeys';
+import adminRouter from './routes/admin';
+import { redisClient } from './lib/redis';
 
 if (!process.env.JWT_SECRET) {
   console.error('FATAL: JWT_SECRET is required. Set it in .env');
   process.exit(1);
 }
 
-const { logger, expressMiddleware } = require('./lib/logger');
-const { prisma } = require('./lib/prisma');
-const express = require('express');
-const cors = require('cors');
-const helmet = require('helmet');
-const multer = require('multer');
-const rateLimit = require('express-rate-limit');
-const cookieParser = require('cookie-parser');
-const path = require('path');
-const fs = require('fs');
-
-const { optionalAuth } = require('./middleware/auth');
-const { enforceExportFormat } = require('./middleware/subscription');
-const tripsRouter = require('./routes/trips');
-const entriesRouter = require('./routes/entries');
-const usersRouter = require('./routes/users');
-const exportRouter = require('./routes/export');
-const authRouter = require('./routes/auth');
-
-function createApp(allowedOrigins) {
+function createApp(allowedOrigins?: string[]) {
   const app = express();
-  
+
   const origins = allowedOrigins || [
     'http://localhost:5173',
     'http://127.0.0.1:5173',
   ];
 
-  // In development, allow any origin for easier mobile testing
-  // In production, use strict origin allowlist
   const corsOrigin = process.env.NODE_ENV === 'production'
-    ? (origin, callback) => {
+    ? (origin: string | undefined, callback: (err: Error | null, origin?: string) => void) => {
         if (!origin) return callback(new Error('Origin required'));
         if (origins.includes(origin)) return callback(null, origin);
         return callback(new Error('Not allowed by CORS'));
@@ -70,9 +69,8 @@ function createApp(allowedOrigins) {
     max: 20,
     standardHeaders: true,
     legacyHeaders: false,
-    keyGenerator: (req) => {
-      // Use user ID if authenticated, otherwise fall back to IP
-      return req.user?.id || req.ip;
+    keyGenerator: (req): string => {
+      return req.user?.id || req.ip || 'unknown';
     },
   });
 
@@ -82,7 +80,7 @@ function createApp(allowedOrigins) {
   app.use(cookieParser());
   app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-const uploadDir = process.env.UPLOAD_DIR || path.join(__dirname, '..', 'uploads');
+  const uploadDir = process.env.UPLOAD_DIR || path.join(__dirname, '..', 'uploads');
   if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
   const upload = multer({
@@ -112,30 +110,26 @@ const uploadDir = process.env.UPLOAD_DIR || path.join(__dirname, '..', 'uploads'
   app.use('/api/users', usersRouter);
   app.use('/api/export', enforceExportFormat, exportRouter);
 
-  const apikeysRouter = require('./routes/apikeys');
-  const adminRouter = require('./routes/admin');
-
-  app.use('/api/apikeys', apikeysRouter.router);
+  app.use('/api/apikeys', apikeysRouter);
   app.use('/api/admin', adminRouter);
 
-  app.get('/api/health', async (req, res) => {
+  app.get('/api/health', async (_req, res) => {
     try {
       await prisma.$queryRaw`SELECT 1`;
-      const { redisClient } = require('./lib/redis');
       await redisClient.ping();
       res.json({ status: 'ok', timestamp: new Date().toISOString() });
     } catch (err) {
       logger.error({ err }, 'Health check failed');
-      res.status(503).json({ status: 'unhealthy', error: err.message });
+      res.status(503).json({ status: 'unhealthy', error: (err as Error).message });
     }
   });
 
-  app.use((err, req, res, next) => {
-    logger.error({ err, correlationId: req.correlationId }, err.message || 'Internal server error');
-    res.status(err.status || 500).json({ error: err.message || 'Internal server error' });
+  app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    logger.error({ err, correlationId: _req.correlationId }, err.message || 'Internal server error');
+    res.status((err as any).status || 500).json({ error: err.message || 'Internal server error' });
   });
 
   return app;
 }
 
-module.exports = { createApp };
+export { createApp };

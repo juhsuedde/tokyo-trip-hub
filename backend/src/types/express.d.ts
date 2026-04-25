@@ -1,5 +1,6 @@
 // Express type extensions
 import type { RequestUser } from './index';
+import type { Logger } from 'pino';
 
 declare global {
   namespace Express {
@@ -11,6 +12,7 @@ declare global {
       files?: {
         file?: any;
       } | null;
+      log?: Logger;
     }
   }
 }

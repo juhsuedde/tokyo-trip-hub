@@ -1,15 +1,14 @@
-// backend/src/routes/auth.js
-const express = require('express');
-const bcrypt = require('bcrypt');
-const { prisma } = require('../lib/prisma');
-const { logger } = require('../lib/logger');
-const { requireAuth, signToken } = require('../middleware/auth');
-const { LoginSchema, RegisterSchema, UpdateProfileSchema, validateAsync, ForgotPasswordSchema, ResetPasswordSchema } = require('../lib/validation');
-const { issueAccessToken, issueRefreshToken, rotateRefreshToken, revokeAllRefreshTokens, requestPasswordReset, resetPassword } = require('../lib/auth.service');
+import { Router } from 'express';
+import bcrypt from 'bcrypt';
+import { prisma } from '../lib/prisma';
+import { logger } from '../lib/logger';
+import { requireAuth } from '../middleware/auth';
+import { LoginSchema, RegisterSchema, UpdateProfileSchema, validateAsync, ForgotPasswordSchema, ResetPasswordSchema } from '../lib/validation';
+import { issueAccessToken, issueRefreshToken, rotateRefreshToken, revokeAllRefreshTokens, requestPasswordReset, resetPassword } from '../lib/auth.service';
 
-const router = express.Router();
+const router = Router();
 
-const setRefreshCookie = (res, token) => {
+const setRefreshCookie = (res: any, token: string) => {
   res.cookie('refreshToken', token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
@@ -22,7 +21,7 @@ const setRefreshCookie = (res, token) => {
 // ── POST /api/auth/register ───────────────────────────────────────────
 router.post('/register', validateAsync(RegisterSchema), async (req, res, next) => {
   try {
-    const { email, password, name } = req.validated;
+    const { email, password, name } = req.validated as { email: string; password: string; name: string };
 
     const passwordHash = await bcrypt.hash(password, 12);
 
@@ -51,7 +50,7 @@ router.post('/register', validateAsync(RegisterSchema), async (req, res, next) =
       },
     });
   } catch (err) {
-    if (err.code === 'P2002') {
+    if ((err as any).code === 'P2002') {
       return res.status(409).json({ error: 'User already exists' });
     }
     next(err);
@@ -61,7 +60,7 @@ router.post('/register', validateAsync(RegisterSchema), async (req, res, next) =
 // ── POST /api/auth/login ────────────────────────────────────────────────
 router.post('/login', validateAsync(LoginSchema), async (req, res, next) => {
   try {
-    const { email, password } = req.validated;
+    const { email, password } = req.validated as { email: string; password: string };
 
     const user = await prisma.user.findUnique({
       where: { email: email.toLowerCase().trim() },
@@ -102,7 +101,7 @@ router.post('/login', validateAsync(LoginSchema), async (req, res, next) => {
 router.get('/me', requireAuth, async (req, res, next) => {
   try {
     const user = await prisma.user.findUnique({
-      where: { id: req.user.id },
+      where: { id: req.user!.id },
     });
 
     if (!user) {
@@ -126,9 +125,9 @@ router.get('/me', requireAuth, async (req, res, next) => {
 // ── PUT /api/auth/profile ───────────────────────────────────────────
 router.put('/profile', requireAuth, validateAsync(UpdateProfileSchema), async (req, res, next) => {
   try {
-    const { name, avatar, email, password } = req.validated;
+    const { name, avatar, email, password } = req.validated as { name?: string; avatar?: string; email?: string; password?: string };
 
-    const updateData = {};
+    const updateData: Record<string, any> = {};
     if (name) updateData.name = name.trim();
     if (avatar !== undefined) updateData.avatar = avatar;
     if (email) updateData.email = email.toLowerCase().trim();
@@ -137,7 +136,7 @@ router.put('/profile', requireAuth, validateAsync(UpdateProfileSchema), async (r
     }
 
     const user = await prisma.user.update({
-      where: { id: req.user.id },
+      where: { id: req.user!.id },
       data: updateData,
     });
 
@@ -155,7 +154,7 @@ router.put('/profile', requireAuth, validateAsync(UpdateProfileSchema), async (r
 // ── POST /api/auth/logout ──────────────────────────────────────────────
 router.post('/logout', requireAuth, async (req, res, next) => {
   try {
-    await revokeAllRefreshTokens(req.user.id);
+    await revokeAllRefreshTokens(req.user!.id);
     res.clearCookie('refreshToken', { path: '/api/auth' });
     res.json({ message: 'Logged out successfully' });
   } catch (err) {
@@ -172,18 +171,18 @@ router.post('/refresh', async (req, res) => {
 
   try {
     const result = await rotateRefreshToken(rawToken);
-    setRefreshCookie(res, result.refreshToken);
+    setRefreshCookie(res, result.refreshToken ?? '');
     res.json(result);
   } catch (err) {
     res.clearCookie('refreshToken', { path: '/api/auth' });
-    const status = err.status || 401;
-    res.status(status).json({ error: err.message });
+    const status = (err as any).status || 401;
+    res.status(status).json({ error: (err as Error).message });
   }
 });
 
 // ── POST /api/auth/forgot-password ───────────────────────────────────────
 router.post('/forgot-password', validateAsync(ForgotPasswordSchema), async (req, res) => {
-  const { email } = req.validated;
+  const { email } = req.validated as { email: string };
 
   await requestPasswordReset(email).catch((err) => logger.error({ err }, 'Password reset error'));
   res.json({ message: 'If that email is registered, a reset link has been sent.' });
@@ -191,19 +190,18 @@ router.post('/forgot-password', validateAsync(ForgotPasswordSchema), async (req,
 
 // ── POST /api/auth/reset-password ────────────────────────────────────────
 router.post('/reset-password', validateAsync(ResetPasswordSchema), async (req, res) => {
-  const { token, password } = req.validated;
+  const { token, password } = req.validated as { token: string; password: string };
 
   try {
     await resetPassword(token, password);
     res.json({ message: 'Password reset successfully. Please log in.' });
   } catch (err) {
-    const status = err.status || 500;
-    res.status(status).json({ error: err.message });
+    const status = (err as any).status || 500;
+    res.status(status).json({ error: (err as Error).message });
   }
 });
 
 // ── POST /api/auth/upgrade ───────────────────────────────────────────
-// DEV ONLY: This endpoint allows free self-upgrade. In production, integrate with payment provider.
 router.post('/upgrade', requireAuth, async (req, res, next) => {
   try {
     const { tier } = req.body;
@@ -212,13 +210,13 @@ router.post('/upgrade', requireAuth, async (req, res, next) => {
     }
 
     const user = await prisma.user.update({
-      where: { id: req.user.id },
+      where: { id: req.user!.id },
       data: { tier: 'PREMIUM' },
     });
 
     await prisma.auditLog.create({
       data: {
-        userId: req.user.id,
+        userId: req.user!.id,
         action: 'UPGRADE_TIER',
         entityType: 'User',
         entityId: user.id,
@@ -226,7 +224,6 @@ router.post('/upgrade', requireAuth, async (req, res, next) => {
       },
     });
 
-    // Issue short-lived access token via proper auth service
     const accessToken = issueAccessToken({
       ...user,
       tier: 'PREMIUM',
@@ -246,4 +243,4 @@ router.post('/upgrade', requireAuth, async (req, res, next) => {
   }
 });
 
-module.exports = router;
+export default router;

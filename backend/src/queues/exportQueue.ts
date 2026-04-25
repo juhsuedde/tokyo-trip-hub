@@ -1,11 +1,7 @@
-/**
- * backend/src/queues/exportQueue.js
- * Bull queue worker for async export generation
- */
-require('dotenv').config();
-const Bull = require('bull');
-const { logger } = require('../lib/logger');
-const { generateExport } = require('../lib/exportEngine');
+import 'dotenv/config';
+import Bull from 'bull';
+import { logger } from '../lib/logger';
+import { generateExport } from '../lib/exportEngine';
 
 const exportQueue = new Bull('generate-export', {
   redis: {
@@ -20,14 +16,13 @@ exportQueue.process(async (job) => {
 
   try {
     await job.progress(10);
-    const result = await generateExport({ tripId, format, template, entryIds, jobId: job.id });
+    const result = await generateExport({ tripId, format, template, entryIds, jobId: String(job.id) });
     await job.progress(100);
 
-    // Notify via Socket.io
     const io = global.__io;
     if (io) {
       io.to(`trip:${tripId}`).emit('export-complete', {
-        jobId: job.id,
+        jobId: String(job.id),
         status: 'completed',
         downloadUrl: result.downloadUrl,
         format,
@@ -36,13 +31,13 @@ exportQueue.process(async (job) => {
 
     return result;
   } catch (err) {
-    logger.error({ jobId: job.id, error: err.message }, 'Export job failed');
+    logger.error({ jobId: String(job.id), error: (err as Error).message }, 'Export job failed');
     const io = global.__io;
     if (io) {
       io.to(`trip:${tripId}`).emit('export-complete', {
-        jobId: job.id,
+        jobId: String(job.id),
         status: 'failed',
-        error: err.message,
+        error: (err as Error).message,
       });
     }
     throw err;
@@ -50,11 +45,11 @@ exportQueue.process(async (job) => {
 });
 
 exportQueue.on('completed', (job, result) => {
-  logger.info({ jobId: job.id, filePath: result.filePath }, 'Export job completed');
+  logger.info({ jobId: String(job.id), filePath: result.filePath }, 'Export job completed');
 });
 
 exportQueue.on('failed', (job, err) => {
-  logger.error({ jobId: job.id, error: err.message }, 'Export job failed');
+  logger.error({ jobId: String(job.id), error: err.message }, 'Export job failed');
 });
 
-module.exports = { exportQueue };
+export { exportQueue };

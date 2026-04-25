@@ -33,7 +33,7 @@ export function extractToken(req: Request): string | null {
 export async function requireAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
   const token = extractToken(req);
   if (!token) {
-    return res.status(401).json({ error: 'Authentication required' });
+    return void res.status(401).json({ error: 'Authentication required' });
   }
 
   try {
@@ -51,9 +51,9 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     next();
   } catch (err) {
     if (err instanceof jwt.TokenExpiredError) {
-      return res.status(401).json({ error: 'Token expired' });
+      return void res.status(401).json({ error: 'Token expired' });
     }
-    return res.status(401).json({ error: 'Invalid token' });
+    return void res.status(401).json({ error: 'Invalid token' });
   }
 }
 
@@ -86,12 +86,12 @@ export async function optionalAuth(req: Request, res: Response, next: NextFuncti
 export function requireTripRole(requiredRole: Role) {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     if (!req.user) {
-      return res.status(401).json({ error: 'Authentication required' });
+      return void res.status(401).json({ error: 'Authentication required' });
     }
 
     const { tripId } = req.params;
     if (!tripId) {
-      return res.status(400).json({ error: 'Trip ID required' });
+      return void res.status(400).json({ error: 'Trip ID required' });
     }
 
     try {
@@ -105,12 +105,12 @@ export function requireTripRole(requiredRole: Role) {
       });
 
       if (!membership) {
-        return res.status(403).json({ error: 'Not a member of this trip' });
+        return void res.status(403).json({ error: 'Not a member of this trip' });
       }
 
       const roleHierarchy: Record<Role, number> = { MEMBER: 0, OWNER: 1 };
       if (roleHierarchy[membership.role] < roleHierarchy[requiredRole]) {
-        return res.status(403).json({ error: `Requires ${requiredRole} role` });
+        return void res.status(403).json({ error: `Requires ${requiredRole} role` });
       }
 
       next();
@@ -131,7 +131,7 @@ export function signToken(user: Partial<RequestUser>): string {
     name: user.name,
     tier: user.tier || 'FREE',
   };
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: process.env.JWT_ACCESS_EXPIRY || '15m' });
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: (process.env.JWT_ACCESS_EXPIRY || '15m') as string } as jwt.SignOptions);
 }
 
 export {};

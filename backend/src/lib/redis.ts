@@ -1,12 +1,12 @@
-const Redis = require('ioredis');
-const { logger } = require('./logger');
+import Redis from 'ioredis';
+import { logger } from './logger';
 
 const REDIS_URL = process.env.REDIS_URL || 'redis://127.0.0.1:6379';
 
 const opts = {
   maxRetriesPerRequest: 3,
   lazyConnect: true,
-  retryStrategy: (times) => {
+  retryStrategy: (times: number) => {
     if (times > 10) return null; // stop retrying
     return Math.min(times * 200, 5000);
   },
@@ -21,4 +21,4 @@ redisClient.on('error', (err) => logger.error({ err }, 'Redis client error'));
 redisPub.on('error', (err) => logger.error({ err }, 'Redis pub error'));
 redisSub.on('error', (err) => logger.error({ err }, 'Redis sub error'));
 
-module.exports = { redisClient, redisPub, redisSub };
+export { redisClient, redisPub, redisSub };

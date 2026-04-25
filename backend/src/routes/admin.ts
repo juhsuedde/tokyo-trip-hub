@@ -1,14 +1,12 @@
-'use strict';
+import { Router, Request, Response, NextFunction } from 'express';
+import { prisma } from '../lib/prisma';
+import { requireAuth } from '../middleware/auth';
 
-const express = require('express');
-const { prisma } = require('../lib/prisma');
-const { requireAuth } = require('../middleware/auth');
-
-const router = express.Router();
+const router = Router();
 
 router.use(requireAuth);
 
-function requireAdmin(req, res, next) {
+function requireAdmin(req: Request, res: Response, next: NextFunction) {
   if (!req.user?.isAdmin) {
     return res.status(403).json({ error: 'Admin access required' });
   }
@@ -43,8 +41,8 @@ router.get('/stats', async (req, res, next) => {
 // GET /api/admin/users
 router.get('/users', async (req, res, next) => {
   try {
-    const limit = parseInt(req.query.limit || '50', 10);
-    const offset = parseInt(req.query.offset || '0', 10);
+    const limit = parseInt((req.query.limit as string) || '50', 10);
+    const offset = parseInt((req.query.offset as string) || '0', 10);
 
     const users = await prisma.user.findMany({
       skip: offset,
@@ -84,7 +82,7 @@ router.post('/users/:id/tier', async (req, res, next) => {
 
     await prisma.auditLog.create({
       data: {
-        userId: req.user.id,
+        userId: req.user!.id,
         action: 'ADMIN_TIER_CHANGE',
         entityType: 'User',
         entityId: user.id,
@@ -98,4 +96,4 @@ router.post('/users/:id/tier', async (req, res, next) => {
   }
 });
 
-module.exports = router;
+export default router;

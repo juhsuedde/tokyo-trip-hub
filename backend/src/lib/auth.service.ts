@@ -16,7 +16,7 @@ export function issueAccessToken(user: Partial<RequestUser>): string {
   return jwt.sign(
     { sub: user.id, email: user.email, tier: user.tier || 'FREE', isAdmin: user.isAdmin || false },
     JWT_SECRET,
-    { expiresIn: ACCESS_EXPIRY }
+    { expiresIn: ACCESS_EXPIRY } as jwt.SignOptions
   );
 }
 
@@ -34,7 +34,7 @@ export async function issueRefreshToken(userId: string, familyId?: string): Prom
   return rawToken;
 }
 
-export async function rotateRefreshToken(rawToken: string): Promise<{ userId: string; family: string }> {
+export async function rotateRefreshToken(rawToken: string): Promise<{ userId: string; refreshToken: string; family: string }> {
   const tokenHash = sha256(rawToken);
 
   const result = await prisma.$transaction(async (tx) => {
@@ -91,7 +91,7 @@ export async function rotateRefreshToken(rawToken: string): Promise<{ userId: st
     return { userId: user!.id, newToken: newRawToken, family };
   });
 
-  return { userId: result.userId, family: result.family };
+  return { userId: result.userId, refreshToken: result.newToken, family: result.family };
 }
 
 export async function revokeAllRefreshTokens(userId: string): Promise<number> {
@@ -118,6 +118,7 @@ export async function requestPasswordReset(email: string): Promise<void> {
   await sendEmail({
     to: user.email,
     subject: 'Reset your TokyoTrip password',
+    text: `Click here to reset your password: ${resetUrl}. This link expires in 1 hour.`,
     html: `<p>Click <a href="${resetUrl}">here</a> to reset your password.</p><p>This link expires in 1 hour.</p>`,
   });
 }

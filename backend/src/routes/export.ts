@@ -1,16 +1,12 @@
-/**
- * backend/src/routes/export.js
- * Export API: POST /api/trips/:id/export, GET /api/export/:jobId/status, GET /api/export/:jobId/download
- */
-const express = require('express');
-const path = require('path');
-const fs = require('fs');
-const { prisma } = require('../lib/prisma');
-const { exportQueue } = require('../queues/exportQueue');
-const { EXPORTS_DIR } = require('../lib/exportEngine');
-const { requireUser } = require('../middleware/session');
+import { Router } from 'express';
+import path from 'path';
+import fs from 'fs';
+import { prisma } from '../lib/prisma';
+import { exportQueue } from '../queues/exportQueue';
+import { EXPORTS_DIR } from '../lib/exportEngine';
+import { requireUser } from '../middleware/session';
 
-const router = express.Router();
+const router = Router();
 router.use(requireUser);
 
 // POST /api/trips/:id/export
@@ -27,7 +23,6 @@ router.post('/trips/:id/export', async (req, res, next) => {
       return res.status(400).json({ error: 'Invalid template.' });
     }
 
-    // Verify trip exists and user is a member
     const membership = await prisma.tripMembership.findFirst({
       where: { tripId, userId },
     });
@@ -112,7 +107,7 @@ router.get('/:jobId/download', async (req, res, next) => {
     }
 
     const ext = path.extname(filePath).slice(1);
-    const mimeTypes = {
+    const mimeTypes: Record<string, string> = {
       pdf: 'application/pdf',
       epub: 'application/epub+zip',
       md: 'text/markdown; charset=utf-8',
@@ -129,4 +124,4 @@ router.get('/:jobId/download', async (req, res, next) => {
   }
 });
 
-module.exports = router;
+export default router;

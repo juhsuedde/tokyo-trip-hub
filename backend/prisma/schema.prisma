@@ -32,6 +32,7 @@ model User {
   auditLogs        AuditLog[]
   apiKeys          ApiKey[]
   trips            Trip[]
+  passwordResets   PasswordReset[]
 
   @@map("users")
 }
@@ -228,4 +229,19 @@ model ApiKey {
 
   @@index([userId])
   @@map("api_keys")
+}
+
+model PasswordReset {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@map("password_resets")
 }

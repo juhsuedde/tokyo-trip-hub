@@ -1,17 +1,15 @@
-'use strict';
+import crypto from 'crypto';
+import { prisma } from '../lib/prisma';
+import { logger } from './logger';
 
-const crypto = require('crypto');
-const { prisma } = require('../lib/prisma');
-const { logger } = require('./logger');
+const sha256 = (raw: string): string => crypto.createHash('sha256').update(raw).digest('hex');
 
-const sha256 = (raw) => crypto.createHash('sha256').update(raw).digest('hex');
-
-async function createApiKey(userId, name, expiresInDays) {
+async function createApiKey(userId: string, name: string, expiresInDays?: number | null) {
   const rawKey = `tk_${crypto.randomBytes(32).toString('hex')}`;
   const keyHash = sha256(rawKey);
-  
-  const expiresAt = expiresInDays 
-    ? new Date(Date.now() + expiresInDays * 24 * 60 * 60 * 1000) 
+
+  const expiresAt = expiresInDays
+    ? new Date(Date.now() + expiresInDays * 24 * 60 * 60 * 1000)
     : null;
 
   const apiKey = await prisma.apiKey.create({
@@ -21,7 +19,7 @@ async function createApiKey(userId, name, expiresInDays) {
   return { id: apiKey.id, key: rawKey, name: apiKey.name, expiresAt: apiKey.expiresAt };
 }
 
-async function listApiKeys(userId) {
+async function listApiKeys(userId: string) {
   return prisma.apiKey.findMany({
     where: { userId },
     select: { id: true, name: true, lastUsedAt: true, expiresAt: true, createdAt: true },
@@ -29,13 +27,13 @@ async function listApiKeys(userId) {
   });
 }
 
-async function revokeApiKey(apiKeyId, userId) {
+async function revokeApiKey(apiKeyId: string, userId: string) {
   return prisma.apiKey.delete({
     where: { id: apiKeyId, userId },
   });
 }
 
-async function validateApiKey(rawKey) {
+async function validateApiKey(rawKey: string) {
   const keyHash = sha256(rawKey);
   const apiKey = await prisma.apiKey.findUnique({
     where: { keyHash },
@@ -58,4 +56,4 @@ async function validateApiKey(rawKey) {
   };
 }
 
-module.exports = { createApiKey, listApiKeys, revokeApiKey, validateApiKey };
+export { createApiKey, listApiKeys, revokeApiKey, validateApiKey };

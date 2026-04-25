@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 TokyoTrip Hub is a collaborative travel journal PWA. A group of travelers captures photos, voice notes, and text entries during a trip, which are enriched by AI (transcription, OCR, categorization, sentiment). Entries are displayed in a real-time feed and on a Leaflet map, and can be exported as PDF/EPUB/Markdown.
 
-**Stack:** Node.js 18 / Express 4 backend, React 18 / Vite 5 frontend, PostgreSQL 16 (Prisma 5 ORM), Redis 7 (Bull queues + pub/sub), Socket.io 4 (real-time).
+**Stack:** Node.js 18 / TypeScript / Express 4 backend, React 18 / Vite 5 frontend, PostgreSQL 16 (Prisma 5 ORM), Redis 7 (Bull queues + pub/sub), Socket.io 4 (real-time).
 
 ## Development Commands
 
@@ -36,7 +36,7 @@ docker compose exec backend npm run seed
 
 ### Backend (`backend/`)
 
-- `npm run dev` — dev server with nodemon hot reload
+- `npm run dev` — dev server with tsx watch
 - `npm test` — Jest tests (only `__tests__/validation.test.js` exists)
 - `npm run lint` — ESLint on `src/`
 - `npm run prisma:generate` / `npm run prisma:migrate` — Prisma client management
@@ -49,13 +49,13 @@ docker compose exec backend npm run seed
 
 ### Mobile Testing
 
-Find local IP with `ipconfig getifaddr en0` (macOS) and access `http://YOUR_IP:5173`. Add IP to `ALLOWED_ORIGINS` in `backend/src/index.js` if CORS blocks.
+Find local IP with `ipconfig getifaddr en0` (macOS) and access `http://YOUR_IP:5173`. Add IP to `ALLOWED_ORIGINS` in `backend/src/index.ts` if CORS blocks.
 
 ## Architecture
 
 ### Backend (`backend/src/`)
 
-**Entry point:** `index.js` — creates Express app + HTTP server + Socket.io server.
+**Entry point:** `index.ts` — creates Express app + HTTP server + Socket.io server.
 
 **Middleware chain (order matters):** CORS → Helmet → Pino logger (correlation IDs) → rate limiter → JSON/cookie/file parsers → static `/uploads` (JWT-gated) → `optionalAuth` session middleware.
 
@@ -94,18 +94,18 @@ Dual system: modern JWT (access 15min + refresh 30d with rotation + family revoc
 
 ## Key Patterns
 
-- **Validation:** Zod schemas in `lib/validation.js`, applied via `validateAsync` middleware that stores parsed data on `req.validated`
+- **Validation:** Zod schemas in `lib/validation.ts`, applied via `validateAsync` middleware that stores parsed data on `req.validated`
 - **Input sanitization:** All user text goes through `sanitizeHtml()` (HTML-entity encoding)
 - **AI providers:** Multi-provider factory with fallback chains. Set `MOCK_AI=true` to develop without API costs
 - **Storage abstraction:** `STORAGE_TYPE` env switches between `local` (disk), `s3`, `cloudinary`
 - **Error handling:** Central Express error handler, Prisma P2002 unique constraint handling, Bull exponential backoff (3 attempts AI, 2 for exports)
-- **Subscription enforcement:** `middleware/subscription.js` enforces tier limits before route handlers
+- **Subscription enforcement:** `middleware/subscription.ts` enforces tier limits before route handlers
 
 ## Gotchas
 
-- CORS is strict — origins must match exactly (configured in `index.js`)
+- CORS is strict — origins must match exactly (configured in `index.ts`)
 - Socket.io shares the same CORS config as Express
 - Uploads directory is configurable via `UPLOAD_DIR` env
 - Exports directory holds generated PDF/EPUB files
 - `node_modules/` are volume-mounted in Docker — don't rely on container-local installs persisting
-- The `exportEngine.js` contains large HTML template strings for PDF/EPUB generation
+- The `exportEngine.ts` contains large HTML template strings for PDF/EPUB generation

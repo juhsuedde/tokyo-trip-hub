@@ -1,19 +1,18 @@
-'use strict';
+import { Router } from 'express';
+import type { Request, Response, NextFunction } from 'express';
+import { requireAuth } from '../middleware/auth';
+import { requireTier } from '../middleware/subscription';
+import { createApiKey, listApiKeys, revokeApiKey, validateApiKey } from '../lib/apiKey.service';
 
-const express = require('express');
-const { requireAuth } = require('../middleware/auth');
-const { requireTier } = require('../middleware/subscription');
-const { createApiKey, listApiKeys, revokeApiKey, validateApiKey } = require('../lib/apiKey.service');
-
-const router = express.Router();
+const router = Router();
 
 router.use(requireAuth);
 
 // POST /api/apikeys - Create API key (PRO only)
-router.post('/', requireTier('PRO'), async (req, res, next) => {
+router.post('/', requireTier('PRO'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { name, expiresInDays } = req.body;
-    const result = await createApiKey(req.user.id, name || 'API Key', expiresInDays);
+    const result = await createApiKey(req.user!.id, name || 'API Key', expiresInDays);
     res.status(201).json(result);
   } catch (err) {
     next(err);
@@ -21,9 +20,9 @@ router.post('/', requireTier('PRO'), async (req, res, next) => {
 });
 
 // GET /api/apikeys - List API keys
-router.get('/', async (req, res, next) => {
+router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const keys = await listApiKeys(req.user.id);
+    const keys = await listApiKeys(req.user!.id);
     res.json(keys);
   } catch (err) {
     next(err);
@@ -31,18 +30,17 @@ router.get('/', async (req, res, next) => {
 });
 
 // DELETE /api/apikeys/:id - Revoke API key
-router.delete('/:id', async (req, res, next) => {
+router.delete('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    await revokeApiKey(req.params.id, req.user.id);
+    await revokeApiKey(req.params.id, req.user!.id);
     res.json({ message: 'API key revoked' });
   } catch (err) {
     next(err);
   }
 });
 
-// Middleware to validate API key from header
-async function requireApiKey(req, res, next) {
-  const rawKey = req.headers['x-api-key'];
+async function requireApiKey(req: Request, res: Response, next: NextFunction) {
+  const rawKey = req.headers['x-api-key'] as string | undefined;
   if (!rawKey) {
     return res.status(401).json({ error: 'API key required' });
   }
@@ -56,9 +54,12 @@ async function requireApiKey(req, res, next) {
     id: valid.userId,
     tier: valid.tier,
     isAdmin: valid.isAdmin,
+    email: '',
+    name: '',
   };
 
   next();
 }
 
-module.exports = { router, requireApiKey };
+export { router, requireApiKey };
+export default router;

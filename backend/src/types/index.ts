@@ -1,5 +1,4 @@
 // Types for TokyoTrip Backend
-import type { Request } from 'express';
 
 export interface RequestUser {
   id: string;
@@ -9,17 +8,6 @@ export interface RequestUser {
   tempSession?: string | null;
   avatar?: string | null;
   isAdmin?: boolean;
-}
-
-declare global {
-  namespace Express {
-    interface Request {
-      user?: RequestUser;
-      sessionToken?: string | null;
-      correlationId?: string;
-      validated?: Record<string, unknown>;
-    }
-  }
 }
 
 // Queue Jobs

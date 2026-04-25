@@ -44,7 +44,7 @@ export const TIER_LIMITS: Record<Tier, TierLimits> = {
 };
 
 export async function checkTripLimit(req: Request, res: Response, next: NextFunction): Promise<void> {
-  if (!req.user) return res.status(401).json({ error: 'Authentication required' });
+  if (!req.user) return void res.status(401).json({ error: 'Authentication required' });
   const { id: userId, tier } = req.user;
   const limits = TIER_LIMITS[tier];
 
@@ -56,7 +56,7 @@ export async function checkTripLimit(req: Request, res: Response, next: NextFunc
     });
 
     if (count >= limits.maxTrips) {
-      return res.status(403).json({
+      return void res.status(403).json({
         error: `Trip limit reached for ${tier} tier (${limits.maxTrips} active trips).`,
         code: 'TRIP_LIMIT_REACHED',
         limit: limits.maxTrips,
@@ -72,7 +72,7 @@ export async function checkTripLimit(req: Request, res: Response, next: NextFunc
 }
 
 export async function checkEntryLimit(req: Request, res: Response, next: NextFunction): Promise<void> {
-  if (!req.user) return res.status(401).json({ error: 'Authentication required' });
+  if (!req.user) return void res.status(401).json({ error: 'Authentication required' });
   const { tier } = req.user;
   const { id: tripId, tripId: tripIdAlt } = req.params;
   const targetTripId = tripId || tripIdAlt;
@@ -86,7 +86,7 @@ export async function checkEntryLimit(req: Request, res: Response, next: NextFun
     const count = await prisma.entry.count({ where: { tripId: targetTripId } });
 
     if (count >= limits.maxEntriesPerTrip) {
-      return res.status(403).json({
+      return void res.status(403).json({
         error: `Entry limit reached for ${tier} tier (${limits.maxEntriesPerTrip} entries/trip).`,
         code: 'ENTRY_LIMIT_REACHED',
         limit: limits.maxEntriesPerTrip,
@@ -107,11 +107,11 @@ export function checkExportFormat(req: Request, res: Response, next: NextFunctio
   const limits = TIER_LIMITS[tier];
 
   if (!format) {
-    return res.status(400).json({ error: 'Export format is required' });
+    return void res.status(400).json({ error: 'Export format is required' });
   }
 
   if (!limits.allowedExports.includes(format)) {
-    return res.status(403).json({
+    return void res.status(403).json({
       error: `Export format '${format}' is not available on the ${tier} plan.`,
       code: 'EXPORT_FORMAT_NOT_ALLOWED',
       allowedFormats: limits.allowedExports,
@@ -128,7 +128,7 @@ export function requireTier(minimumTier: Tier) {
     const requiredRank = tierOrder[minimumTier] ?? 0;
 
     if (userRank < requiredRank) {
-      return res.status(403).json({
+      return void res.status(403).json({
         error: `This feature requires ${minimumTier} or higher. You are on ${req.user?.tier}.`,
         code: 'TIER_REQUIRED',
         required: minimumTier,

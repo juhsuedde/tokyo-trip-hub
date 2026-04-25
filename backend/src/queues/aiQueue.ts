@@ -1,24 +1,10 @@
-/**
- * backend/src/queues/aiQueue.js  (Phase 2 refactor — multi-provider)
- *
- * Changes from Phase 2:
- *  - Removed direct openai SDK calls
- *  - Uses selectProvider() from aiProviders.js
- *  - Provider selection happens per-job so env vars can change without restart
- *  - Error handling chains through providers via withProviderFallback
- *  - All Socket.io events and DB updates are unchanged
- */
-
-'use strict';
-
-require('dotenv').config();
-const Bull  = require('bull');
-const path  = require('path');
-const { prisma } = require('../lib/prisma');
-const { logger } = require('../lib/logger');
-const { selectProvider, withProviderFallback, GroqProvider, OpenAIProvider, OpenRouterProvider } = require('../lib/aiProviders');
-
-// ─── Queue setup ──────────────────────────────────────────────────────────────
+import 'dotenv/config';
+import Bull from 'bull';
+import path from 'path';
+import { prisma } from '../lib/prisma';
+import { logger } from '../lib/logger';
+import { selectProvider, withProviderFallback, GroqProvider, OpenAIProvider, OpenRouterProvider } from '../lib/aiProviders';
+import { redisClient, redisPub } from '../lib/redis';
 
 const aiQueue = new Bull('ai-processing', {
   redis: {
@@ -33,26 +19,20 @@ const aiQueue = new Bull('ai-processing', {
   },
 });
 
-const { redisClient, redisPub } = require('../lib/redis');
 const { io: globalIo } = global.__io ? { io: global.__io } : { io: null };
 
 const CHANNEL = 'tokyotrip:notifications';
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function emitToTrip(tripId, event, payload) {
-  // Publish to Redis channel for main process to emit
+function emitToTrip(tripId: string, event: string, payload: unknown) {
   redisPub.publish(CHANNEL, JSON.stringify({ tripId, event, payload }));
 }
 
-async function markEntryStatus(entryId, status, extra = {}) {
+async function markEntryStatus(entryId: string, status: string, extra: Record<string, unknown> = {}) {
   await prisma.entry.update({
     where: { id: entryId },
     data:  { ...extra },
   });
 }
-
-// ─── Processor: transcribe-audio ─────────────────────────────────────────────
 
 aiQueue.process('transcribe-audio', async (job) => {
   const { entryId, tripId, audioFilePath } = job.data;
@@ -67,7 +47,6 @@ aiQueue.process('transcribe-audio', async (job) => {
     const provider = selectProvider({ task: 'transcribe' });
     transcription = await provider.transcribeAudio(audioFilePath);
   } else {
-    // Primary: Groq → Fallback: OpenAI
     transcription = await withProviderFallback(
       'transcribe-audio',
       async () => {
@@ -75,7 +54,6 @@ aiQueue.process('transcribe-audio', async (job) => {
         return provider.transcribeAudio(audioFilePath);
       },
       async () => {
-        // Explicit fallback: if primary was Groq and failed, try OpenAI
         if (process.env.OPENAI_API_KEY && process.env.GROQ_API_KEY) {
           logger.warn('Groq failed, falling back to OpenAI for transcription');
           const fallback = new OpenAIProvider(process.env.OPENAI_API_KEY);
@@ -95,8 +73,6 @@ aiQueue.process('transcribe-audio', async (job) => {
 
   await job.progress(90);
 
-  // After transcription, enqueue text analysis (sentiment + tags via vision provider is overkill;
-  // keep this as a lightweight text-only update using existing category logic if needed)
   emitToTrip(tripId, 'entry-updated', {
     entryId,
     transcription,
@@ -108,8 +84,6 @@ aiQueue.process('transcribe-audio', async (job) => {
   logger.info({ jobId: job.id, entryId }, 'transcribe-audio job completed');
   return { entryId, transcription };
 });
-
-// ─── Processor: process-image-ocr ────────────────────────────────────────────
 
 aiQueue.process('process-image-ocr', async (job) => {
   const { entryId, tripId, imageUrl } = job.data;
@@ -124,7 +98,6 @@ aiQueue.process('process-image-ocr', async (job) => {
     const provider = selectProvider({ task: 'vision' });
     result = await provider.analyzeImage(imageUrl);
   } else {
-    // Primary: OpenRouter → Fallback: OpenAI
     result = await withProviderFallback(
       'process-image-ocr',
       async () => {
@@ -132,7 +105,6 @@ aiQueue.process('process-image-ocr', async (job) => {
         return provider.analyzeImage(imageUrl);
       },
       async () => {
-        // Explicit fallback: if primary was OpenRouter and failed, try OpenAI
         if (process.env.OPENAI_API_KEY && process.env.OPENROUTER_API_KEY) {
           logger.warn('OpenRouter failed, falling back to OpenAI for vision');
           const fallback = new OpenAIProvider(process.env.OPENAI_API_KEY);
@@ -173,15 +145,12 @@ await job.progress(100);
   return { entryId, category, sentiment, tags };
 });
 
-// ─── Queue event hooks ────────────────────────────────────────────────────────────
-
 aiQueue.on('completed', (job, result) => {
   logger.info({ jobId: job.id, jobName: job.name }, 'Job completed');
 });
 
 aiQueue.on('failed', (job, err) => {
   logger.error({ jobId: job.id, jobName: job.name, attempts: job.attemptsMade, error: err.message }, 'Job failed');
-  // Emit failure so frontend can reflect it
   if (job.data?.tripId && job.data?.entryId) {
     emitToTrip(job.data.tripId, 'entry-updated', {
       entryId:  job.data.entryId,
@@ -195,4 +164,4 @@ aiQueue.on('stalled', (job) => {
   logger.warn({ jobId: job.id }, 'Job stalled and will be retried');
 });
 
-module.exports = { aiQueue };
+export { aiQueue };

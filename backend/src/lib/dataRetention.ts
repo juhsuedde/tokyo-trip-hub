@@ -1,9 +1,7 @@
-'use strict';
-
-const cron = require('node-cron');
-const { prisma } = require('../lib/prisma');
-const { logger } = require('./logger');
-const { sendEmail } = require('./email.service');
+import cron from 'node-cron';
+import { prisma } from '../lib/prisma';
+import { logger } from './logger';
+import { sendEmail } from './email.service';
 
 const ARCHIVE_DAYS = parseInt(process.env.DATA_RETENTION_ARCHIVE_DAYS || '30', 10);
 const DELETE_DAYS = parseInt(process.env.DATA_RETENTION_DELETE_DAYS || '90', 10);
@@ -11,7 +9,7 @@ const WARN_DAYS = parseInt(process.env.DATA_RETENTION_WARN_DAYS || '7', 10);
 
 async function archiveOldTrips() {
   logger.info('Starting daily trip archival job');
-  
+
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - ARCHIVE_DAYS);
 
@@ -43,7 +41,7 @@ async function archiveOldTrips() {
 
 async function deleteOldTrips() {
   logger.info('Starting weekly trip deletion job');
-  
+
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - DELETE_DAYS);
 
@@ -67,7 +65,7 @@ async function deleteOldTrips() {
 
 async function warnBeforeDeletion() {
   logger.info('Starting deletion warning job');
-  
+
   const warnCutoff = new Date();
   warnCutoff.setDate(warnCutoff.getDate() - (DELETE_DAYS - WARN_DAYS));
 
@@ -97,8 +95,8 @@ function startDataRetentionJobs() {
   cron.schedule('0 2 * * *', archiveOldTrips);
   cron.schedule('0 3 * * 0', deleteOldTrips);
   cron.schedule('0 4 * * *', warnBeforeDeletion);
-  
+
   logger.info('Data retention cron jobs scheduled');
 }
 
-module.exports = { startDataRetentionJobs, archiveOldTrips, deleteOldTrips, warnBeforeDeletion };
+export { startDataRetentionJobs, archiveOldTrips, deleteOldTrips, warnBeforeDeletion };

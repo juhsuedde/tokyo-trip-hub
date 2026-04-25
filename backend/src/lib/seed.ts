@@ -1,10 +1,7 @@
-/**
- * Seed script: creates a demo Tokyo trip with 4 users and sample entries.
- * Run with: npm run seed
- */
-require('dotenv').config();
-const bcrypt = require('bcrypt');
-const { prisma } = require('./prisma');
+import 'dotenv/config';
+import bcrypt from 'bcrypt';
+import { prisma } from './prisma';
+import type { Category, Sentiment, EntryType } from '../types';
 
 const USERS = [
   { name: 'Alex', tempSession: 'demo-session-alex', email: 'alex@demo.com', passwordHash: 'demo123' },
@@ -13,9 +10,19 @@ const USERS = [
   { name: 'Sara', tempSession: 'demo-session-sara', email: 'sara@demo.com', passwordHash: 'demo123' },
 ];
 
-const ENTRIES = [
+const ENTRIES: Array<{
+  authorIndex: number;
+  type: EntryType;
+  rawText: string;
+  address?: string;
+  latitude?: number;
+  longitude?: number;
+  category: Category;
+  sentiment: Sentiment;
+  tags: string[];
+}> = [
   {
-    authorIndex: 1, // Yuki
+    authorIndex: 1,
     type: 'TEXT',
     rawText: 'Tsuta ramen — Michelin star shoyu broth. Queue was 45 mins but absolutely worth it 🤌',
     address: 'Tsuta Ramen, Sugamo, Tokyo',
@@ -26,7 +33,7 @@ const ENTRIES = [
     tags: ['ramen', 'michelin', 'sugamo', 'must-try'],
   },
   {
-    authorIndex: 0, // Alex
+    authorIndex: 0,
     type: 'TEXT',
     rawText: 'IC Card works everywhere — get one at Narita. Avoid buying single tickets, it\'s a nightmare at rush hour.',
     address: 'Narita Airport, Terminal 2',
@@ -35,7 +42,7 @@ const ENTRIES = [
     tags: ['ic-card', 'suica', 'transport', 'tip'],
   },
   {
-    authorIndex: 3, // Sara
+    authorIndex: 3,
     type: 'TEXT',
     rawText: 'Meiji Jingu at sunrise. Completely empty. The gravel path through the cedar forest is magical.',
     address: 'Meiji Jingu, Harajuku, Tokyo',
@@ -46,7 +53,7 @@ const ENTRIES = [
     tags: ['meiji', 'shrine', 'harajuku', 'early-morning'],
   },
   {
-    authorIndex: 2, // Kai
+    authorIndex: 2,
     type: 'TEXT',
     rawText: 'Don Quijote Shibuya has 5 floors of everything. Tax-free for passport holders. Got matcha kit-kats!',
     address: 'Don Quijote, Shibuya, Tokyo',
@@ -57,7 +64,7 @@ const ENTRIES = [
     tags: ['donki', 'tax-free', 'matcha', 'shibuya'],
   },
   {
-    authorIndex: 0, // Alex
+    authorIndex: 0,
     type: 'TEXT',
     rawText: 'Avoid Shibuya crossing on weekends after 8pm — absolute sardine tin. Go early morning for the iconic empty shot.',
     address: 'Shibuya Crossing, Tokyo',
@@ -72,7 +79,6 @@ const ENTRIES = [
 async function seed() {
   console.log('🌱 Seeding database...');
 
-  // Upsert users
   const users = [];
   for (const u of USERS) {
     const passwordHash = await bcrypt.hash(u.passwordHash, 12);
@@ -85,7 +91,6 @@ async function seed() {
     console.log(`  ✓ User: ${user.name} (session: ${user.tempSession})`);
   }
 
-  // Create trip
   let trip = await prisma.trip.findFirst({
     where: { inviteCode: 'TOKYO1' },
   });
@@ -106,7 +111,6 @@ async function seed() {
     console.log(`  ↩ Trip already exists: ${trip.title}`);
   }
 
-  // Add all users as members
   for (let i = 0; i < users.length; i++) {
     await prisma.tripMembership.upsert({
       where: { userId_tripId: { userId: users[i].id, tripId: trip.id } },
@@ -120,7 +124,6 @@ async function seed() {
   }
   console.log(`  ✓ Added ${users.length} members to trip`);
 
-  // Create entries
   let entryCount = 0;
   for (const e of ENTRIES) {
     const existing = await prisma.entry.findFirst({

@@ -1,6 +1,4 @@
 /**
- * backend/src/lib/aiProviders.js
- *
  * Unified AI provider interface with three implementations:
  *   - OpenAIProvider   (production: Whisper + GPT-4o)
  *   - GroqProvider     (free/cheap: Whisper-large-v3)
@@ -11,11 +9,10 @@
  *   analyzeImage(imageUrl)        → Promise<{ ocrText, category, tags, sentiment }>
  */
 
-'use strict';
-
-const fs = require('fs');
-const path = require('path');
-const { logger } = require('./logger');
+import fs from 'fs';
+import path from 'path';
+import { logger } from './logger';
+import type { VisionAnalysisResult } from '../types';
 
 // Configurable AI models via env vars
 const AI_MODELS = {
@@ -42,8 +39,7 @@ Respond ONLY with valid JSON, no markdown, no explanation:
 
 // ─── Response parser (shared) ─────────────────────────────────────────────────
 
-function parseVisionResponse(rawText) {
-  // Strip possible markdown code fences
+function parseVisionResponse(rawText: string): VisionAnalysisResult {
   const clean = rawText.replace(/```json|```/gi, '').trim();
   try {
     const parsed = JSON.parse(clean);
@@ -54,7 +50,6 @@ function parseVisionResponse(rawText) {
       sentiment: parsed.sentiment || 'NEUTRAL',
     };
   } catch {
-    const { logger } = require('./logger');
     logger.warn({ rawText: rawText.slice(0, 200) }, 'Failed to parse vision JSON, using defaults');
     return { ocrText: rawText.slice(0, 500), category: 'MISC', tags: [], sentiment: 'NEUTRAL' };
   }
@@ -64,7 +59,7 @@ function parseVisionResponse(rawText) {
 
 class OpenAIProvider {
   apiKey: string;
-  _client: any;
+  _client: InstanceType<typeof import('openai').default> | null;
 
   constructor(apiKey: string) {
     if (!apiKey) throw new Error('OpenAIProvider requires OPENAI_API_KEY');
@@ -74,23 +69,24 @@ class OpenAIProvider {
 
   _getClient() {
     if (!this._client) {
-      const { OpenAI } = require('openai');
+      // Dynamic import to avoid hard dependency at module level
+      const OpenAI = require('openai').default;
       this._client = new OpenAI({ apiKey: this.apiKey });
     }
     return this._client;
   }
 
-  async transcribeAudio(audioFilePath) {
-    const openai = this._getClient();
+  async transcribeAudio(audioFilePath: string): Promise<string> {
+    const openai = this._getClient()!;
     const transcription = await openai.audio.transcriptions.create({
       file:  fs.createReadStream(audioFilePath),
-      model: 'whisper-1',
+      model: AI_MODELS.transcribe,
     });
     return transcription.text;
   }
 
-  async analyzeImage(imageUrl) {
-    const openai = this._getClient();
+  async analyzeImage(imageUrl: string): Promise<VisionAnalysisResult> {
+    const openai = this._getClient()!;
     const response = await openai.chat.completions.create({
       model: AI_MODELS.vision,
       messages: [
@@ -104,7 +100,7 @@ class OpenAIProvider {
       ],
       max_tokens: 400,
     });
-    return parseVisionResponse(response.choices[0].message.content);
+    return parseVisionResponse(response.choices[0].message.content || '');
   }
 }
 
@@ -120,20 +116,11 @@ class GroqProvider {
     this.baseUrl = 'https://api.groq.com/openai/v1';
   }
 
-  async transcribeAudio(audioFilePath) {
-    // Use form-data package if available, otherwise fall back to node-fetch FormData
-    let FormData, Blob;
-    try {
-      ({ FormData, Blob } = require('node-fetch'));
-    } catch {
-      // Node 18+ has global FormData / Blob
-      FormData = global.FormData;
-      Blob = global.Blob;
-    }
-
-    const form = new FormData();
+  async transcribeAudio(audioFilePath: string): Promise<string> {
     const fileStream = fs.readFileSync(audioFilePath);
     const fileName = path.basename(audioFilePath);
+
+    const form = new FormData();
     form.append('file', new Blob([fileStream]), fileName);
     form.append('model', 'whisper-large-v3');
     form.append('response_format', 'json');
@@ -149,12 +136,11 @@ class GroqProvider {
       throw new Error(`Groq transcription failed (${res.status}): ${err}`);
     }
 
-    const data = await res.json();
+    const data = await res.json() as { text?: string };
     return data.text || '';
   }
 
-  async analyzeImage(_imageUrl) {
-    // Groq's vision models (llava) are limited — route vision to OpenRouter instead
+  async analyzeImage(_imageUrl: string): Promise<VisionAnalysisResult> {
     throw new Error('GroqProvider does not support image analysis. Use OpenRouterProvider for vision tasks.');
   }
 }
@@ -162,11 +148,14 @@ class GroqProvider {
 // ─── OpenRouter Provider (vision) ────────────────────────────────────────────
 
 class OpenRouterProvider {
-  constructor(apiKey) {
+  apiKey: string;
+  baseUrl: string;
+  visionModels: string[];
+
+  constructor(apiKey: string) {
     if (!apiKey) throw new Error('OpenRouterProvider requires OPENROUTER_API_KEY');
     this.apiKey = apiKey;
     this.baseUrl = 'https://openrouter.ai/api/v1';
-    // Models tried in order; first that succeeds wins
     this.visionModels = [
       'amazon/nova-2-lite-v1:free',
       'mistralai/pixtral-12b:free',
@@ -174,12 +163,12 @@ class OpenRouterProvider {
     ];
   }
 
-  async transcribeAudio(_audioFilePath) {
+  async transcribeAudio(_audioFilePath: string): Promise<string> {
     throw new Error('OpenRouterProvider does not support audio transcription. Use GroqProvider or OpenAIProvider.');
   }
 
-  async analyzeImage(imageUrl) {
-    let lastError;
+  async analyzeImage(imageUrl: string): Promise<VisionAnalysisResult> {
+    let lastError: Error | undefined;
 
     for (const model of this.visionModels) {
       try {
@@ -211,15 +200,15 @@ class OpenRouterProvider {
           throw new Error(`OpenRouter (${model}) failed (${res.status}): ${errText}`);
         }
 
-        const data = await res.json();
+        const data = await res.json() as { choices?: Array<{ message?: { content?: string } }> };
         const content = data.choices?.[0]?.message?.content;
         if (!content) throw new Error(`OpenRouter (${model}) returned empty content`);
 
         logger.info({ model }, 'OpenRouter used model');
         return parseVisionResponse(content);
       } catch (err) {
-        logger.warn({ model, error: err.message }, 'OpenRouter model failed');
-        lastError = err;
+        logger.warn({ model, error: (err as Error).message }, 'OpenRouter model failed');
+        lastError = err as Error;
       }
     }
 
@@ -230,15 +219,15 @@ class OpenRouterProvider {
 // ─── Mock Provider ────────────────────────────────────────────────────────────
 
 class MockProvider {
-  async transcribeAudio(_audioFilePath) {
-    await new Promise(r => setTimeout(r, 300)); // simulate latency
+  async transcribeAudio(_audioFilePath: string): Promise<string> {
+    await new Promise(r => setTimeout(r, 300));
     return 'Mock transcription: Great ramen shop near Shinjuku station! The broth was amazing.';
   }
 
-  async analyzeImage(_imageUrl) {
+  async analyzeImage(_imageUrl: string): Promise<VisionAnalysisResult> {
     await new Promise(r => setTimeout(r, 300));
-    const categories = ['FOOD_DRINK', 'SIGHTSEEING', 'SHOPPING', 'ACCOMMODATION', 'TRANSPORTATION', 'MISC'];
-    const sentiments  = ['POSITIVE', 'POSITIVE', 'POSITIVE', 'NEUTRAL', 'NEGATIVE'];
+    const categories = ['FOOD_DRINK', 'SIGHTSEEING', 'SHOPPING', 'ACCOMMODATION', 'TRANSPORTATION', 'MISC'] as const;
+    const sentiments  = ['POSITIVE', 'POSITIVE', 'POSITIVE', 'NEUTRAL', 'NEGATIVE'] as const;
     return {
       ocrText:   'Mock OCR: ラーメン ¥850 定食 ¥1,200',
       category:  categories[Math.floor(Math.random() * categories.length)],
@@ -250,16 +239,7 @@ class MockProvider {
 
 // ─── Provider Factory / Selector ──────────────────────────────────────────────
 
-/**
- * selectProvider({ task: 'transcribe' | 'vision', env: process.env })
- *
- * Priority:
- *   transcribe : Groq → OpenAI → error
- *   vision     : OpenRouter → OpenAI → error
- *
- * MOCK_AI=true overrides everything.
- */
-function selectProvider({ task, env = process.env }) {
+function selectProvider({ task, env = process.env }: { task: string; env?: Record<string, string | undefined> }) {
   if (env.MOCK_AI === 'true') {
     return new MockProvider();
   }
@@ -297,22 +277,16 @@ function selectProvider({ task, env = process.env }) {
   throw new Error(`Unknown task type: "${task}". Expected "transcribe" or "vision".`);
 }
 
-/**
- * withProviderFallback(providerFn, fallbackFn)
- *
- * Wraps a provider call; if it throws, logs the error and tries fallbackFn.
- * Used internally to chain providers when needed.
- */
-async function withProviderFallback(label, primaryFn, fallbackFn) {
+async function withProviderFallback<T>(label: string, primaryFn: () => Promise<T>, fallbackFn: () => Promise<T>): Promise<T> {
   try {
     return await primaryFn();
   } catch (err) {
-    logger.warn({ label, error: err.message }, 'Primary provider failed, trying fallback');
+    logger.warn({ label, error: (err as Error).message }, 'Primary provider failed, trying fallback');
     return await fallbackFn();
   }
 }
 
-module.exports = {
+export {
   OpenAIProvider,
   GroqProvider,
   OpenRouterProvider,
