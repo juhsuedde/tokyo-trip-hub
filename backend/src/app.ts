@@ -10,6 +10,7 @@ if (!process.env.JWT_SECRET) {
 }
 
 const { logger, expressMiddleware } = require('./lib/logger');
+const { prisma } = require('./lib/prisma');
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');

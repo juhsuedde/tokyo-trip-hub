@@ -76,13 +76,13 @@ O objetivo final não é apenas um e-book de lembrança para quem viajou, e sim 
 
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) (ou Colima)
 - [Node.js 18+](https://nodejs.org/) (para desenvolvimento local fora do Docker)
-- Chave de API da OpenAI (opcional — há modo MOCK para desenvolvimento sem custos)
+- Chave de API da OpenAI (obrigatória para uso real; modo MOCK disponível só para dev)
 
 ### 1. Clone e Execute
 
 ```bash
-git clone https://github.com/SEU_USUARIO/tokyotrip-hub.git
-cd tokyotrip-hub
+git clone https://github.com/juhsuedde/tokyo-trip-hub.git
+cd tokyo-trip-hub
 
 # Inicie todos os serviços (PostgreSQL, Redis, Backend, Frontend)
 docker compose up --build
@@ -242,13 +242,30 @@ VITE_API_URL=http://localhost:3001
 - [x] Extração de custos de recibos
 - [x] **UI mobile-first com dark mode** (Phase 3.5 - Polimento para Viagem)
 
-### Phase 4 🚀 — SaaS
+### Phase 4 ✅ — SaaS
 
-- [ ] Contas de usuário (substituir sessões temporárias)
-- [ ] Múltiplas viagens por usuário
-- [ ] Tiers de assinatura (Freemium)
-- [ ] Armazenamento Cloudinary/S3
-- [ ] Publicação com domínio personalizado
+- [x] Contas de usuário (substituir sessões temporárias)
+- [x] Múltiplas viagens por usuário
+- [x] Tiers de assinatura (Freemium)
+- [x] Armazenamento Cloudinary/S3
+- [x] Publicação com domínio personalizado
+
+### Phase 5 — AI & Social
+
+- [ ] Transcrição de áudio (VOICE entries) — já tem estrutura no AIQueue
+- [ ] OCR/análise de imagens (PHOTO entries) — já tem estrutura
+- [ ] Reactions e Comments — já existem no schema
+- [ ] Sincronização offline mais robusta
+
+### Phase 6 — Analytics
+
+- [ ] Estatísticas de viagem (total entries, fotos, dias)
+- [ ] Mapa com density de locations
+
+### Phase 7 — Monetização
+
+- [ ] Integração Stripe (subscription)
+- [ ] Portal de billing
 
 ---
 
@@ -267,7 +284,7 @@ VITE_API_URL=http://localhost:3001
 - **Etiquetagem**: Gera tags relevantes ("ramen", "shibuya", "barato")
 - **Sentimento**: Detecta experiências positivas/neutras/negativas
 
-> **Nota para desenvolvimento:** Ative `MOCK_AI=true` no `.env` para testar todo o fluxo de UI sem consumir créditos da OpenAI.
+> **Nota para desenvolvimento:** Certifique-se de que MOCK_AI=false e a chave da OpenAI está válida. Teste com pelo menos 5 fotos e 3 áudios reais.
 
 ---
 
