@@ -331,8 +331,8 @@ router.post('/:id/publish', requireUser, requireTier('PREMIUM'), validateAsync(P
       return res.status(403).json({ error: 'Only owners can publish trips' });
     }
 
-    const { slug, customDomain } = req.validated;
-    const data = { isPublished: true };
+    const { slug, customDomain } = req.validated as { slug?: string; customDomain?: string | null };
+    const data: { isPublished: boolean; publishedSlug?: string; publishedUrl?: string; customDomain?: string | null } = { isPublished: true };
     if (slug) data.publishedSlug = slug;
     else if (!slug) data.publishedSlug = id.slice(0, 8);
     data.publishedUrl = `${process.env.APP_BASE_URL || 'http://localhost:5173'}/p/${data.publishedSlug}`;
