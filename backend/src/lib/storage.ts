@@ -151,5 +151,3 @@ export async function deleteFile(url: string | null | undefined): Promise<void> 
     logger.info({ path: fullPath }, 'File deleted locally');
   }
 }
-
-export { STORAGE_TYPE };
