@@ -4,6 +4,7 @@
  */
 import { useState, useEffect, useRef } from 'react';
 import { api } from '../lib/api';
+import { Entry } from '../types/index';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -53,60 +54,62 @@ const STEPS = ['Format', 'Template', 'Entries', 'Export'];
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function ExportModal({ tripId, socket, onClose }) {
+export default function ExportModal({ tripId, socket, onClose }: { tripId: string; socket: any; onClose: () => void }) {
   const [step, setStep] = useState(0);
-  const [format, setFormat] = useState(null);
-  const [template, setTemplate] = useState(null);
-  const [entries, setEntries] = useState([]); // all entries
-  const [selectedIds, setSelectedIds] = useState(null); // null = all
+  const [format, setFormat] = useState<string | null>(null);
+  const [template, setTemplate] = useState<string | null>(null);
+  const [entries, setEntries] = useState<Entry[]>([]); // all entries
+  const [selectedIds, setSelectedIds] = useState<string[] | null>(null); // null = all
   const [loadingEntries, setLoadingEntries] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const [jobId, setJobId] = useState(null);
-  const [exportStatus, setExportStatus] = useState(null); // queued/processing/completed/failed
-  const [downloadUrl, setDownloadUrl] = useState(null);
-  const [error, setError] = useState(null);
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [exportStatus, setExportStatus] = useState<string | null>(null); // queued/processing/completed/failed
+  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const pollRef = useRef(null);
 
-  // Load entries for selection step
-  useEffect(() => {
-    if (step === 2 && entries.length === 0) {
-      setLoadingEntries(true);
-      async function load() {
-        try {
-          let all = [];
-          let cursor = null;
-          do {
-            const res = await api.getFeed(tripId, cursor);
-            all = all.concat(res.entries || []);
-            cursor = res.nextCursor || null;
-          } while (cursor);
-          setEntries(all);
-        } catch {}
-        finally { setLoadingEntries(false); }
-      }
-      load();
-    }
-  }, [step]);
+   // Load entries for selection step
+   useEffect(() => {
+     if (step === 2 && entries.length === 0) {
+       setLoadingEntries(true);
+       async function load() {
+         try {
+           let all: Entry[] = [];
+           let cursor = null;
+           do {
+             const res = await api.getFeed(tripId, cursor);
+             all = all.concat(res.entries || []);
+             cursor = res.nextCursor || null;
+           } while (cursor);
+           setEntries(all);
+         } catch (err) {
+           console.error('Failed to load entries:', err);
+         } finally { setLoadingEntries(false); }
+       }
+       load();
+     }
+   }, [step]);
 
-  // Socket.io listener for export-complete
-  useEffect(() => {
-    if (!socket || !jobId) return;
-    function handler(data) {
-      if (String(data.jobId) !== String(jobId)) return;
-      setExportStatus(data.status);
-      if (data.status === 'completed') {
-        setDownloadUrl(data.downloadUrl);
-        setProgress(100);
-        clearPoll();
-      } else if (data.status === 'failed') {
-        setError(data.error || 'Export failed.');
-        clearPoll();
-      }
-    }
-    socket.on('export-complete', handler);
-    return () => socket.off('export-complete', handler);
-  }, [socket, jobId]);
+   // Socket.io listener for export-complete
+   useEffect(() => {
+     if (!socket || !jobId) return;
+     function handler(data: { jobId: string; status: string; downloadUrl?: string; error?: string }) {
+       if (String(data.jobId) !== String(jobId)) return;
+       setExportStatus(data.status as 'queued' | 'processing' | 'completed' | 'failed');
+       if (data.status === 'completed') {
+         setDownloadUrl(data.downloadUrl ?? null);
+         setProgress(100);
+         clearPoll();
+       } else if (data.status === 'failed') {
+         setError(data.error ?? 'Export failed.');
+         setDownloadUrl(null);
+         clearPoll();
+       }
+     }
+     socket.on('export-complete', handler);
+     return () => socket.off('export-complete', handler);
+   }, [socket, jobId]);
 
   // Polling fallback (in case socket misses the event)
   function startPoll(jid) {

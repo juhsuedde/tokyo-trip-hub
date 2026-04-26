@@ -17,7 +17,7 @@ import { startDataRetentionJobs } from './lib/dataRetention';
 
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
-const app = createApp(ALLOWED_ORIGINS);
+const { app } = createApp(ALLOWED_ORIGINS);
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
@@ -90,8 +90,7 @@ async function gracefulShutdown(signal: string) {
       }
 
       await prisma.$disconnect();
-      redisClient.quit();
-      redisSub.quit();
+      await Promise.all([redisClient.quit(), redisSub.quit()]);
       logger.info('Shutdown complete');
       process.exit(0);
     } catch (err) {

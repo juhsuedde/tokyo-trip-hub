@@ -39,7 +39,7 @@ function createApp(allowedOrigins?: string[]) {
 
   const corsOrigin = process.env.NODE_ENV === 'production'
     ? (origin: string | undefined, callback: (err: Error | null, origin?: string | boolean) => void) => {
-        if (!origin) return callback(null, true);  // Allow mobile apps, health checks
+        if (!origin) return callback(null, true);
         if (origins.includes(origin)) return callback(null, origin);
         return callback(new Error('Not allowed by CORS'));
       }
@@ -87,7 +87,6 @@ function createApp(allowedOrigins?: string[]) {
     storage: multer.memoryStorage(),
     limits: { fileSize: 50 * 1024 * 1024 },
   });
-  app.use(upload.any());
 
   app.use('/uploads', uploadLimiter, express.static(uploadDir, {
     setHeaders: (res, _path) => {
@@ -99,29 +98,25 @@ function createApp(allowedOrigins?: string[]) {
 
   const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: process.env.NODE_ENV === 'test' ? Infinity : 100,
-    standardHeaders: true,
+    limit: 20,
+    standardHeaders: 'draft-7',
     legacyHeaders: false,
   });
-  app.use('/api/auth', authLimiter);
-  app.use('/api/auth', authRouter);
+
+  app.use('/api/auth', authLimiter, authRouter);
   app.use('/api/trips', tripsRouter);
   app.use('/api/entries', entriesRouter);
   app.use('/api/users', usersRouter);
-  app.use('/api/export', enforceExportFormat, exportRouter);
-
+  app.use('/api/export', exportRouter);
   app.use('/api/apikeys', apikeysRouter);
   app.use('/api/admin', adminRouter);
 
-  app.get('/api/health', async (_req, res) => {
-    try {
-      await prisma.$queryRaw`SELECT 1`;
-      await redisClient.ping();
-      res.json({ status: 'ok', timestamp: new Date().toISOString() });
-    } catch (err) {
-      logger.error({ err }, 'Health check failed');
-      res.status(503).json({ status: 'unhealthy', error: (err as Error).message });
-    }
+  app.get('/api/health', (_req, res) => {
+    res.json({ status: 'ok', timestamp: Date.now() });
+  });
+
+  app.use((_req, res) => {
+    res.status(404).json({ error: 'Not found' });
   });
 
   app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
@@ -129,7 +124,14 @@ function createApp(allowedOrigins?: string[]) {
     res.status((err as any).status || 500).json({ error: err.message || 'Internal server error' });
   });
 
-  return app;
+  return { app, upload };
 }
 
-export { createApp };
+function createUpload() {
+  return multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 50 * 1024 * 1024 },
+  });
+}
+
+export { createApp, createUpload };

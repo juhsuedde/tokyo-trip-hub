@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { api } from '../lib/api';
 import { getLocation } from '../lib/media';
+import { Entry } from '../types/index';
 
 /**
  * CaptureBar — text, photo, and voice entry creation.
@@ -10,61 +11,65 @@ import { getLocation } from '../lib/media';
  *  - Tap again to stop and upload as type: VOICE
  *  - Falls back to offline queue if network unavailable
  */
-export default function CaptureBar({ tripId, onEntryCreated }) {
+export default function CaptureBar({ tripId, onEntryCreated }: { tripId: string; onEntryCreated?: (entry: Entry) => void }) {
   const [text, setText] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  // Voice state
-  const [recording, setRecording] = useState(false);
-  const [recordingSeconds, setRecordingSeconds] = useState(0);
-  const mediaRecorderRef = useRef(null);
-  const chunksRef = useRef([]);
-  const timerRef = useRef(null);
+   // Voice state
+   const [recording, setRecording] = useState(false);
+   const [recordingSeconds, setRecordingSeconds] = useState(0);
+   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+   const chunksRef = useRef<Blob[]>([]);
+   const timerRef = useRef<number | null>(null);
 
-  // ── Text entry ──────────────────────────────────────────────────────────────
-  async function handleTextSubmit(e) {
-    e.preventDefault();
-    if (!text.trim() || submitting) return;
-    setSubmitting(true);
-    try {
-      const loc = await getLocation();
-      const entry = await api.createTextEntry(tripId, { 
-        type: 'TEXT', 
-        rawText: text.trim(),
-        ...(loc && { latitude: String(loc.latitude), longitude: String(loc.longitude) })
-      });
-      setText('');
-      onEntryCreated?.(entry);
-    } catch (err) {
-      console.error('Text entry failed:', err);
-    } finally {
-      setSubmitting(false);
-    }
-  }
+   // ── Text entry ──────────────────────────────────────────────────────────────
+   async function handleTextSubmit(e: React.FormEvent) {
+     e.preventDefault();
+     if (!text.trim() || submitting) return;
+     setSubmitting(true);
+     try {
+       const loc = await getLocation();
+       const entryData: any = { 
+         type: 'TEXT', 
+         rawText: text.trim()
+       };
+       if (loc) {
+         entryData.latitude = String(loc.latitude);
+         entryData.longitude = String(loc.longitude);
+       }
+       const entry = await api.createTextEntry(tripId, entryData);
+       setText('');
+       onEntryCreated?.(entry);
+     } catch (err) {
+       console.error('Text entry failed:', err);
+     } finally {
+       setSubmitting(false);
+     }
+   }
 
-  // ── Photo entry ─────────────────────────────────────────────────────────────
-  async function handlePhoto(e) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setSubmitting(true);
-    try {
-      const loc = await getLocation();
-      const fd = new FormData();
-      fd.append('file', file);
-      fd.append('type', 'PHOTO');
-      if (loc) {
-        fd.append('latitude', String(loc.latitude));
-        fd.append('longitude', String(loc.longitude));
-      }
-      const entry = await api.createEntry(tripId, fd);
-      onEntryCreated?.(entry);
-    } catch (err) {
-      console.error('Photo upload failed:', err);
-    } finally {
-      setSubmitting(false);
-      e.target.value = '';
-    }
-  }
+   // ── Photo entry ─────────────────────────────────────────────────────────────
+   async function handlePhoto(e: React.ChangeEvent<HTMLInputElement>) {
+     const file = e.target.files?.[0];
+     if (!file) return;
+     setSubmitting(true);
+     try {
+       const loc = await getLocation();
+       const fd = new FormData();
+       fd.append('file', file);
+       fd.append('type', 'PHOTO');
+       if (loc) {
+         fd.append('latitude', String(loc.latitude));
+         fd.append('longitude', String(loc.longitude));
+       }
+       const entry = await api.createEntry(tripId, fd);
+       onEntryCreated?.(entry);
+     } catch (err) {
+       console.error('Photo upload failed:', err);
+     } finally {
+       setSubmitting(false);
+       e.target.value = '';
+     }
+   }
 
   // ── Voice recording ─────────────────────────────────────────────────────────
   async function startRecording() {
@@ -97,40 +102,43 @@ export default function CaptureBar({ tripId, onEntryCreated }) {
     }
   }
 
-  function stopRecording() {
-    clearInterval(timerRef.current);
-    mediaRecorderRef.current?.stop();
-    setRecording(false);
-    setRecordingSeconds(0);
-  }
+   function stopRecording() {
+     if (timerRef.current) {
+       clearInterval(timerRef.current);
+       timerRef.current = null;
+     }
+     mediaRecorderRef.current?.stop();
+     setRecording(false);
+     setRecordingSeconds(0);
+   }
 
-  async function uploadVoice(blob, mimeType) {
-    setSubmitting(true);
-    try {
-      const loc = await getLocation();
-      const ext = mimeType.includes('mp4') ? 'm4a' : 'webm';
-      const file = new File([blob], `voice-${Date.now()}.${ext}`, { type: mimeType });
-      const fd = new FormData();
-      fd.append('file', file);
-      fd.append('type', 'VOICE');
-      if (loc) {
-        fd.append('latitude', String(loc.latitude));
-        fd.append('longitude', String(loc.longitude));
-      }
-      const entry = await api.createEntry(tripId, fd);
-      onEntryCreated?.(entry);
-    } catch (err) {
-      console.error('Voice upload failed:', err);
-    } finally {
-      setSubmitting(false);
-    }
-  }
+   async function uploadVoice(blob: Blob, mimeType: string) {
+     setSubmitting(true);
+     try {
+       const loc = await getLocation();
+       const ext = mimeType.includes('mp4') ? 'm4a' : 'webm';
+       const file = new File([blob], `voice-${Date.now()}.${ext}`, { type: mimeType });
+       const fd = new FormData();
+       fd.append('file', file);
+       fd.append('type', 'VOICE');
+       if (loc) {
+         fd.append('latitude', String(loc.latitude));
+         fd.append('longitude', String(loc.longitude));
+       }
+       const entry = await api.createEntry(tripId, fd);
+       onEntryCreated?.(entry);
+     } catch (err) {
+       console.error('Voice upload failed:', err);
+     } finally {
+       setSubmitting(false);
+     }
+   }
 
-  function formatTime(s) {
-    const m = Math.floor(s / 60).toString().padStart(2, '0');
-    const sec = (s % 60).toString().padStart(2, '0');
-    return `${m}:${sec}`;
-  }
+   function formatTime(s: number) {
+     const m = Math.floor(s / 60).toString().padStart(2, '0');
+     const sec = (s % 60).toString().padStart(2, '0');
+     return `${m}:${sec}`;
+   }
 
   return (
     <div className="capture-bar">

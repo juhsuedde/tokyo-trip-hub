@@ -10,6 +10,9 @@ import { CreateEntrySchema, CreateReactionSchema, CreateCommentSchema, UpdateEnt
 import { saveFile, deleteFile } from '../lib/storage';
 import { sanitizeHtml } from '../lib/sanitizer';
 import { checkEntryLimit } from '../middleware/subscription';
+import { createUpload } from '../app';
+
+const upload = createUpload();
 
 let sharp: any = null;
 try {
@@ -36,11 +39,11 @@ const ALLOWED_EXTENSIONS = {
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
-async function validateFileMime(file: any, type: string) {
+async function validateFileMime(file: Express.Multer.File, type: string) {
   const allowedExts = (ALLOWED_EXTENSIONS as Record<string, string[]>)[type];
   if (!allowedExts) return false;
 
-  const ext = path.extname(file.name)?.toLowerCase();
+  const ext = path.extname(file.originalname)?.toLowerCase();
   if (!ext || !allowedExts.includes(ext)) return false;
 
   if (file.size > MAX_FILE_SIZE) {
@@ -51,7 +54,7 @@ async function validateFileMime(file: any, type: string) {
   if (!sharp) return true;
 
   try {
-    const metadata = await sharp(file.tempFilePath).metadata();
+    const metadata = await sharp(file.buffer).metadata();
     if (!metadata?.format) return false;
 
     const formatToMime: Record<string, string> = {
@@ -86,7 +89,7 @@ interface CreateEntryBody {
 }
 
 // ── POST /api/entries/trips/:tripId/entries ────────────────────────────────────
-router.post('/trips/:tripId/entries', checkEntryLimit, async (req: Request<{ tripId: string }, {}, CreateEntryBody>, res: Response, next) => {
+router.post('/trips/:tripId/entries', upload.single('file'), checkEntryLimit, async (req: Request<{ tripId: string }, {}, CreateEntryBody>, res: Response, next) => {
   try {
     const { tripId } = req.params;
     const userId = req.user!.id;
@@ -97,14 +100,14 @@ router.post('/trips/:tripId/entries', checkEntryLimit, async (req: Request<{ tri
     if (!membership) return res.status(403).json({ error: 'Not a member of this trip' });
 
     let contentUrl = null;
-    const files = req.files as Record<string, any> | undefined;
-    const type = ((req.body.type || files?.file) ? req.body.type || 'PHOTO' : 'TEXT').toUpperCase();
+    const file = req.file;
+    const type = ((req.body.type || file) ? req.body.type || 'PHOTO' : 'TEXT').toUpperCase();
 
-    if (files?.file) {
-      if (!(await validateFileMime(files.file, type))) {
+    if (file) {
+      if (!(await validateFileMime(file, type))) {
         return res.status(400).json({ error: 'Invalid file type' });
       }
-      contentUrl = await saveFile(files.file, type);
+      contentUrl = await saveFile(file, type);
     }
 
     const entry = await prisma.entry.create({

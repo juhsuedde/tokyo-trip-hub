@@ -1,15 +1,15 @@
 import { useState, useEffect } from 'react';
-import { api } from './lib/api.js';
-import { registerBackgroundSync, syncOfflineEntries } from './lib/offlineQueue.js';
-import OnboardScreen from './screens/OnboardScreen.jsx';
-import AuthScreen from './screens/AuthScreen.jsx';
-import FeedScreen from './screens/FeedScreen.jsx';
-import MapScreen from './screens/MapScreen.jsx';
+import { api } from './lib/api';
+import { registerBackgroundSync, syncOfflineEntries } from './lib/offlineQueue';
+import OnboardScreen from './screens/OnboardScreen';
+import AuthScreen from './screens/AuthScreen';
+import FeedScreen from './screens/FeedScreen';
+import MapScreen from './screens/MapScreen';
 import ExportModal from './components/ExportModal';
 
 export default function App() {
-  const [user, setUser] = useState(null);
-  const [trip, setTrip] = useState(null);
+  const [user, setUser] = useState<any>(null);
+  const [trip, setTrip] = useState<any>(null);
   const [activeTab, setActiveTab] = useState('feed');
   const [showExport, setShowExport] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -51,13 +51,13 @@ export default function App() {
   }, []);
 
   // Also register background sync on auth
-  const handleAuth = (user, token) => {
+  const handleAuth = (user: any, token: string) => {
     localStorage.setItem('sessionToken', token);
     setUser(user);
     registerBackgroundSync();
   };
 
-  const handleOnboarded = (user, trip) => {
+  const handleOnboarded = (user: any, trip: any) => {
     localStorage.setItem('currentTrip', JSON.stringify(trip));
     setUser(user);
     setTrip(trip);
@@ -68,12 +68,6 @@ export default function App() {
     localStorage.removeItem('currentTrip');
     setUser(null);
     setTrip(null);
-  };
-
-const handleLeaveTrip = () => {
-    localStorage.removeItem('currentTrip');
-    setTrip(null);
-    setActiveTab('feed');
   };
 
   const handleSwitchTrip = () => {
@@ -99,13 +93,13 @@ const handleLeaveTrip = () => {
     return <OnboardScreen user={user} onComplete={handleOnboarded} onLogout={handleLogout} />;
   }
 
-return (
+  return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--bg)' }}>
       {/* Screen content */}
       <div style={{ flex: 1, minHeight: 0 }}>
         {activeTab === 'feed' && <FeedScreen user={user} trip={trip} onSwitchTrip={handleSwitchTrip} />}
-        {activeTab === 'map' && <MapScreen tripId={trip.id} />}
-        {showExport && <ExportModal tripId={trip.id} onClose={() => setShowExport(false)} />}
+        {activeTab === 'map' && <MapScreen tripId={trip!.id} />}
+        {showExport && <ExportModal tripId={trip!.id} socket={null as any} onClose={() => setShowExport(false)} />}
       </div>
 
       {/* Tab bar */}

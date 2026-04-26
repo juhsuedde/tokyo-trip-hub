@@ -1,5 +1,5 @@
 /**
- * frontend/src/lib/api.js  (Phase 3 — adds export endpoints)
+ * frontend/src/lib/api.ts  (Phase 3 — adds export endpoints)
  */
 import { saveOfflineEntry, syncOfflineEntries } from './offlineQueue';
 
@@ -9,25 +9,25 @@ function getSession() {
   return localStorage.getItem('sessionToken');
 }
 
-function isNetworkError(err) {
+function isNetworkError(err: unknown): boolean {
   return (
     err instanceof TypeError &&
     (err.message === 'Failed to fetch' || err.message.includes('NetworkError'))
   );
 }
 
-async function request(method, path, body, isFormData = false) {
+async function request(method: string, path: string, body: unknown, isFormData = false) {
   const token = getSession();
-  const headers = {};
+  const headers: Record<string, string> = {};
   if (token) headers['Authorization'] = `Bearer ${token}`;
   if (!isFormData) headers['Content-Type'] = 'application/json';
 
   const res = await fetch(`${BASE}/api${path}`, {
     method,
     headers,
-    body: isFormData ? body : body ? JSON.stringify(body) : undefined,
+    body: isFormData ? body as BodyInit : body ? JSON.stringify(body) : undefined,
   });
-  
+   
   const text = await res.text();
   if (res.status === 401) {
     localStorage.removeItem('sessionToken');
@@ -38,30 +38,30 @@ async function request(method, path, body, isFormData = false) {
     const data = text ? JSON.parse(text) : {};
     throw new Error(data.error || `HTTP ${res.status}`);
   }
-  
+   
   return text ? JSON.parse(text) : {};
 }
 
-async function requestWithOfflineFallback(tripId, formDataOrBody, isFormData) {
+async function requestWithOfflineFallback(tripId: string, formDataOrBody: unknown, isFormData: boolean) {
   try {
     return await request('POST', `/entries/trips/${tripId}/entries`, formDataOrBody, isFormData);
   } catch (err) {
     if (isNetworkError(err)) {
-      if (isFormData) {
+      if (isFormData && formDataOrBody instanceof FormData) {
         const file = formDataOrBody.get('file');
-        const data = {};
+        const data: Record<string, unknown> = {};
         for (const [k, v] of formDataOrBody.entries()) {
           if (k !== 'file') data[k] = v;
         }
         await saveOfflineEntry({
           tripId,
           data,
-          fileBlob: file ? await file.arrayBuffer().then((b) => new Blob([b], { type: file.type })) : null,
-          fileName: file?.name,
-          fileType: file?.type,
+          fileBlob: file ? await (file as Blob).arrayBuffer().then((b) => new Blob([b], { type: (file as Blob).type })) : null,
+          fileName: (file as File)?.name,
+          fileType: (file as File)?.type,
         });
       } else {
-        await saveOfflineEntry({ tripId, data: formDataOrBody });
+        await saveOfflineEntry({ tripId, data: formDataOrBody as Record<string, unknown> });
       }
       return { offline: true };
     }

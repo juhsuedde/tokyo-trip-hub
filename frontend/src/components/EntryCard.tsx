@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api } from '../lib/api';
+import { Entry } from '../types/index';
 
 /**
  * EntryCard — displays a single feed entry.
@@ -9,7 +10,7 @@ import { api } from '../lib/api';
  *  - Listens to `entry-processed` Socket.io events and refreshes status
  *  - Renders transcription, ocrText, category, tags, sentiment when available
  */
-export default function EntryCard({ entry: initialEntry, currentUserId, socket, onDelete }) {
+export default function EntryCard({ entry: initialEntry, currentUserId, socket, onDelete }: { entry: Entry; currentUserId: string; socket: any; onDelete: (entryId: string) => void }) {
   const [entry, setEntry] = useState(initialEntry);
 
   const [processing, setProcessing] = useState(
@@ -23,8 +24,8 @@ export default function EntryCard({ entry: initialEntry, currentUserId, socket, 
   useEffect(() => {
     if (!socket || !processing) return;
 
-    function handleProcessed(data) {
-      if (data.entryId !== entry.id) return;
+    function handleProcessed(data: Entry) {
+      if (data.id !== entry.id) return;
       setEntry((prev) => ({ ...prev, ...data }));
       setProcessing(false);
     }
@@ -48,10 +49,11 @@ export default function EntryCard({ entry: initialEntry, currentUserId, socket, 
       } catch { /* ignore */ }
       if (attempts >= 12) clearInterval(interval);
     }, 5000);
+
     return () => clearInterval(interval);
   }, [processing, entry.id]);
 
-  async function handleReaction(emoji) {
+  async function handleReaction(emoji: string) {
     try {
       const updated = await api.toggleReaction(entry.id, emoji);
       setEntry((prev) => ({ ...prev, reactions: updated.reactions }));
@@ -60,7 +62,7 @@ export default function EntryCard({ entry: initialEntry, currentUserId, socket, 
     }
   }
 
-  async function handleComment(e) {
+  async function handleComment(e: React.FormEvent) {
     e.preventDefault();
     if (!commentText.trim()) return;
     try {
@@ -73,30 +75,29 @@ export default function EntryCard({ entry: initialEntry, currentUserId, socket, 
   }
 
   const isOwner = entry.userId === currentUserId;
-  const REACTIONS = ['❤️', '😂', '🔥', '👍', '😮'];
   const SENTIMENT_ICON = { POSITIVE: '😊', NEUTRAL: '😐', NEGATIVE: '😟' };
 
   return (
     <div className="entry-card">
-       {/* Header */}
-       <div className="entry-header">
-         <div className="avatar">
-           <span>{entry.user?.name?.[0] ?? '?'}</span>
-         </div>
-         <span className="username">{entry.user?.name ?? 'Unknown'}</span>
-         <div className="entry-time">
-           {new Date(entry.capturedAt).toLocaleString()}
-         </div>
-         {isOwner && (
-           <button
-             className="entry-delete"
-             onClick={() => onDelete?.(entry.id)}
-             title="Delete"
-           >
-             ✕
-           </button>
-         )}
-       </div>
+      {/* Header */}
+      <div className="entry-header">
+        <div className="avatar">
+          <span>{entry.user?.name?.[0] ?? '?'}</span>
+        </div>
+        <span className="username">{entry.user?.name ?? 'Unknown'}</span>
+        <div className="entry-time">
+          {new Date(entry.capturedAt).toLocaleString()}
+        </div>
+        {isOwner && (
+          <button
+            className="entry-delete"
+            onClick={() => onDelete?.(entry.id)}
+            title="Delete"
+          >
+            ✕
+          </button>
+        )}
+      </div>
 
       {/* Content */}
       {entry.type === 'TEXT' && (
@@ -146,7 +147,7 @@ export default function EntryCard({ entry: initialEntry, currentUserId, socket, 
       )}
 
       {/* Category + Sentiment + Tags */}
-      {(entry.category || entry.sentiment || entry.tags?.length > 0) && (
+      {(entry.category || entry.sentiment || (entry.tags && entry.tags.length > 0)) && (
         <div className="entry-meta-row">
           {entry.category && (
             <span className="entry-badge entry-badge--category">
@@ -158,7 +159,7 @@ export default function EntryCard({ entry: initialEntry, currentUserId, socket, 
               {SENTIMENT_ICON[entry.sentiment]}
             </span>
           )}
-          {entry.tags?.map((tag) => (
+          {(entry.tags || []).map((tag) => (
             <span key={tag} className="entry-badge entry-badge--tag">#{tag}</span>
           ))}
         </div>
@@ -166,15 +167,15 @@ export default function EntryCard({ entry: initialEntry, currentUserId, socket, 
 
       {/* Reactions */}
       <div className="entry-reactions">
-        {REACTIONS.map((emoji) => {
-          const count = entry.reactions?.filter((r) => r.emoji === emoji).length ?? 0;
+        {(entry.reactions || []).map((reaction) => {
+          const count = reaction._count ?? 0;
           return (
             <button
-              key={emoji}
+              key={reaction.emoji}
               className={`reaction-btn ${count > 0 ? 'reaction-btn--active' : ''}`}
-              onClick={() => handleReaction(emoji)}
+              onClick={() => handleReaction(reaction.emoji)}
             >
-              {emoji} {count > 0 && <span>{count}</span>}
+              {reaction.emoji} {count > 0 && <span>{count}</span>}
             </button>
           );
         })}
@@ -185,12 +186,12 @@ export default function EntryCard({ entry: initialEntry, currentUserId, socket, 
         className="entry-comments-toggle"
         onClick={() => setShowComments((v) => !v)}
       >
-        💬 {entry.comments?.length ?? 0} comment{entry.comments?.length !== 1 ? 's' : ''}
+        💬 {(entry.comments || []).length} comment{(entry.comments || []).length !== 1 ? 's' : ''}
       </button>
 
       {showComments && (
         <div className="entry-comments">
-          {entry.comments?.map((c) => (
+          {(entry.comments || []).map((c) => (
             <div key={c.id} className="comment">
               <strong>{c.user?.name}</strong>: {c.text}
             </div>

@@ -7,8 +7,8 @@ export const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, '..', '
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3001';
 
 interface UploadedFile {
-  name: string;
-  tempFilePath: string;
+  originalname: string;
+  buffer: Buffer;
   size: number;
   mimetype?: string;
 }
@@ -42,7 +42,7 @@ async function uploadToS3(file: UploadedFile, key: string, contentType: string):
     params: {
       Bucket: s3Bucket!,
       Key: key,
-      Body: fs.createReadStream(file.tempFilePath),
+      Body: file.buffer,
       ContentType: contentType,
     },
   });
@@ -73,16 +73,22 @@ async function uploadToCloudinary(file: UploadedFile, folder: string): Promise<s
     api_secret: process.env.CLOUDINARY_API_SECRET,
   });
   
-  const result = await cloudinarySdk.uploader.upload(file.tempFilePath, {
-    folder: folder || 'tokyotrip',
-    resource_type: 'auto',
+  const uploadPromise = new Promise<string>((resolve, reject) => {
+    const uploadStream = cloudinarySdk.uploader.upload_stream(
+      { folder: folder || 'tokyotrip', resource_type: 'auto' },
+      (error, result) => {
+        if (error) reject(error);
+        else resolve(result!.secure_url);
+      }
+    );
+    uploadStream.end(file.buffer);
   });
   
-  return result.secure_url;
+  return uploadPromise;
 }
 
 export async function saveFile(file: UploadedFile, type: string): Promise<string> {
-  const ext = path.extname(file.name).toLowerCase();
+  const ext = path.extname(file.originalname).toLowerCase();
   const filename = `${type.toLowerCase()}_${Date.now()}_${Math.random().toString(36).slice(2)}${ext}`;
   
   if (STORAGE_TYPE === 's3') {
@@ -109,7 +115,7 @@ export async function saveFile(file: UploadedFile, type: string): Promise<string
   }
   
   const destPath = path.join(UPLOAD_DIR, filename);
-  fs.copyFileSync(file.tempFilePath, destPath);
+  fs.writeFileSync(destPath, file.buffer);
   logger.info({ filename, type, storage: 'local' }, 'File saved locally');
   return `/uploads/${filename}`;
 }

@@ -1,10 +1,15 @@
 import imageCompression from 'browser-image-compression';
 
+interface Coordinates {
+  latitude: number;
+  longitude: number;
+}
+
 /**
  * Compress an image file client-side before upload.
  * Target: max 1200px wide, ~80% quality, max 1MB.
  */
-export async function compressImage(file) {
+export async function compressImage(file: File): Promise<File> {
   const options = {
     maxSizeMB: 1,
     maxWidthOrHeight: 1200,
@@ -24,22 +29,30 @@ export async function compressImage(file) {
 /**
  * Build a FormData payload for a media entry upload.
  */
-export function buildEntryFormData({ type, rawText, file, latitude, longitude, address, capturedAt }) {
+export function buildEntryFormData(params: { 
+  type: string; 
+  rawText?: string; 
+  file?: File; 
+  latitude?: number | null; 
+  longitude?: number | null; 
+  address?: string; 
+  capturedAt?: string
+}) {
   const fd = new FormData();
-  fd.append('type', type);
-  if (rawText) fd.append('rawText', rawText);
-  if (file) fd.append('file', file);
-  if (latitude != null) fd.append('latitude', String(latitude));
-  if (longitude != null) fd.append('longitude', String(longitude));
-  if (address) fd.append('address', address);
-  if (capturedAt) fd.append('capturedAt', capturedAt);
+  fd.append('type', params.type);
+  if (params.rawText) fd.append('rawText', params.rawText);
+  if (params.file) fd.append('file', params.file);
+  if (params.latitude != null) fd.append('latitude', String(params.latitude));
+  if (params.longitude != null) fd.append('longitude', String(params.longitude));
+  if (params.address) fd.append('address', params.address);
+  if (params.capturedAt) fd.append('capturedAt', params.capturedAt);
   return fd;
 }
 
 /**
  * Get current geolocation as a Promise.
  */
-export function getLocation(timeout = 8000) {
+export function getLocation(timeout = 8000): Promise<Coordinates | null> {
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) return resolve(null);
     navigator.geolocation.getCurrentPosition(
